@@ -1,0 +1,10 @@
+[package]
+name = "storage"
+version = "0.1.0"
+authors = ["Matthieu M. <matthieum.147192@gmail.com>"]
+edition = "2021"
+description = "An exploration of Storage, instead of Allocators, for collections"
+repository = "https://github.com/matthieu-m/storage"
+license = "MIT OR Apache-2.0"
+keywords = ["allocator", "collection", "experimental", "nightly", "storage"]
+categories = ["no-std"]
