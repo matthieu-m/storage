@@ -3,6 +3,12 @@ use core::{
     ptr::NonNull,
 };
 
+use std::alloc::Global as GlobalAllocator;
+
+use crate::storage::AllocatorStorage;
+
+pub(crate) type Global = AllocatorStorage<GlobalAllocator>;
+
 #[derive(Debug, Default)]
 pub(crate) struct NonAllocator;
 
