@@ -76,9 +76,7 @@ where
     }
 
     fn allocate_zeroed(&self, layout: Layout) -> Result<Self::Handle, AllocError> {
-        self.0
-            .allocate_zeroed(layout)
-            .map(|slice| slice.as_non_null_ptr())
+        self.0.allocate_zeroed(layout).map(|slice| slice.as_non_null_ptr())
     }
 
     unsafe fn grow_zeroed(

@@ -222,9 +222,7 @@ where
         //      pre-conditions of `grow`.
         //  -   `new_ptr` is valid for `old_layout.size()` bytes, as `new_layout.size()` is greater than or equal to
         //      that as per the pre-conditions of `grow`.
-        unsafe {
-            ptr::copy_nonoverlapping(current_ptr.as_ptr(), new_ptr.as_ptr(), old_layout.size())
-        };
+        unsafe { ptr::copy_nonoverlapping(current_ptr.as_ptr(), new_ptr.as_ptr(), old_layout.size()) };
 
         //  Safety:
         //  -   `handle` has been allocated by `self`, as per the pre-conditions of `grow`.
@@ -266,9 +264,7 @@ where
         //  -   `new_ptr` is valid `new_layout.size()` bytes, as it was allocated with `new_layout`.
         //  -   `current_ptr` is valid for `new_layout.size()` bytes, as it is smaller than or equal to
         //      `old_layout.size()` as per the pre-conditions of `shrink`.
-        unsafe {
-            ptr::copy_nonoverlapping(current_ptr.as_ptr(), new_ptr.as_ptr(), new_layout.size())
-        };
+        unsafe { ptr::copy_nonoverlapping(current_ptr.as_ptr(), new_ptr.as_ptr(), new_layout.size()) };
 
         //  Safety:
         //  -   `handle` has been allocated by `self`, as per the pre-conditions of `shrink`.
@@ -311,9 +307,7 @@ where
         //      pre-conditions of `grow`.
         //  -   `new_ptr` is valid for `old_layout.size()` bytes, as `new_layout.size()` is greater than or equal to
         //      that as per the pre-conditions of `grow`.
-        unsafe {
-            ptr::copy_nonoverlapping(current_ptr.as_ptr(), new_ptr.as_ptr(), old_layout.size())
-        };
+        unsafe { ptr::copy_nonoverlapping(current_ptr.as_ptr(), new_ptr.as_ptr(), old_layout.size()) };
 
         //  Safety:
         //  -   `handle` has been allocated by `self`, as per the pre-conditions of `grow`.
