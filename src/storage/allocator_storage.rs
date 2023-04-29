@@ -24,6 +24,10 @@ where
 {
     type Handle = NonNull<u8>;
 
+    fn dangling() -> Self::Handle {
+        NonNull::dangling()
+    }
+
     fn allocate(&self, layout: Layout) -> Result<Self::Handle, AllocError> {
         self.0.allocate(layout).map(|slice| slice.as_non_null_ptr())
     }

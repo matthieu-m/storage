@@ -26,6 +26,8 @@ impl<T> Default for InlineSingleStorage<T> {
 unsafe impl<T> Storage for InlineSingleStorage<T> {
     type Handle = ();
 
+    fn dangling() -> Self::Handle {}
+
     fn allocate(&self, layout: Layout) -> Result<Self::Handle, AllocError> {
         Self::validate_layout(layout)?;
 

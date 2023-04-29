@@ -11,6 +11,7 @@
 //  Features
 #![feature(allocator_api)]
 #![feature(maybe_uninit_write_slice)]
+#![feature(offset_of)]
 #![feature(ptr_as_uninit)]
 #![feature(ptr_metadata)]
 #![feature(slice_ptr_get)]

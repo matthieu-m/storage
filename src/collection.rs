@@ -4,10 +4,12 @@
 //! `Storage` trait, rather than providing fully implemented collections -- for now.
 
 mod concurrent_vec;
+mod skip_list;
 mod storage_box;
 
 #[cfg(test)]
 mod utils;
 
 pub use concurrent_vec::ConcurrentVec;
+pub use skip_list::SkipList;
 pub use storage_box::StorageBox;

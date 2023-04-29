@@ -8,3 +8,8 @@ repository = "https://github.com/matthieu-m/storage"
 license = "MIT OR Apache-2.0"
 keywords = ["allocator", "collection", "experimental", "nightly", "storage"]
 categories = ["no-std"]
+
+[dependencies]
+
+#   For Skip List.
+oorandom = "11.1.3"

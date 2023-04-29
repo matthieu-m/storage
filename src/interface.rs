@@ -28,6 +28,13 @@ pub unsafe trait Storage {
     /// A Handle to memory allocated by the instance of Storage which creates it.
     type Handle: Copy;
 
+    /// Creates a dangling handle.
+    ///
+    /// A dangling handle is never valid, and thus cannot be deallocated, resolved, grown, shrunk, etc... Furthermore
+    /// there is no explicit way to distinguish whether a handle is dangling, or not. It is up to the user to remember
+    /// whether a given handle is dangling, valid, or used to be valid but was invalidated.
+    fn dangling() -> Self::Handle;
+
     /// Attempts to allocate a block of memory.
     ///
     /// On success, returns a `Handle` to a block of memory meeting the size and alignment guarantees of `Layout`.
