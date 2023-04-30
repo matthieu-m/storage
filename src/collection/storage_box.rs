@@ -1,51 +1,40 @@
 //! Proof-of-Concept implementation of a `Box` atop a `Storage`.
 
 use core::{
-    alloc::Layout,
     fmt,
-    marker::{PhantomData, Unsize},
+    marker::Unsize,
     mem::{self, ManuallyDrop},
-    ops,
-    ptr::{self, NonNull, Pointee},
+    ops, ptr,
 };
 
-use crate::interface::Storage;
+use crate::{extension::unique::Unique, interface::Storage};
 
 /// A `Box` atop a `Storage`.
 pub struct StorageBox<T: ?Sized, S: Storage> {
-    metadata: <T as Pointee>::Metadata,
-    handle: S::Handle,
     storage: ManuallyDrop<S>,
-    _marker: PhantomData<T>,
+    handle: ManuallyDrop<Unique<T, S::Handle>>,
 }
 
 impl<T, S: Storage> StorageBox<T, S> {
     /// Creates a new instance.
     pub fn new(value: T, storage: S) -> Result<Self, (T, S)> {
-        let Ok(handle) = storage.allocate(Layout::new::<T>()) else {
+        let Ok(handle) = Unique::allocate(&storage) else {
             return Err((value, storage))
         };
 
         //  Safety:
         //  -   `handle` was allocated by `self`.
         //  -   `handle` is still valid.
-        let pointer = unsafe { storage.resolve(handle) };
+        let pointer = unsafe { handle.resolve_raw(&storage) };
 
         //  Safety:
         //  -   `pointer` is valid for writes of `Layout::new::<T>().size()` bytes.
         unsafe { ptr::write(pointer.cast().as_ptr(), value) };
 
-        #[allow(clippy::let_unit_value)]
-        let metadata = ();
+        let handle = ManuallyDrop::new(handle);
         let storage = ManuallyDrop::new(storage);
-        let _marker = PhantomData;
 
-        Ok(Self {
-            metadata,
-            handle,
-            storage,
-            _marker,
-        })
+        Ok(Self { storage, handle })
     }
 }
 
@@ -53,11 +42,13 @@ impl<T: ?Sized, S: Storage> Drop for StorageBox<T, S> {
     fn drop(&mut self) {
         let value: &mut T = &mut *self;
 
-        let layout = Layout::for_value(value);
-
         //  Safety:
         //  -   The instance is live.
         unsafe { ptr::drop_in_place(value) };
+
+        //  Safety:
+        //  -   `self.handle` will never be used ever again.
+        let handle = unsafe { ManuallyDrop::take(&mut self.handle) };
 
         //  Safety:
         //  -   `self.storage` will never be used ever again.
@@ -66,8 +57,7 @@ impl<T: ?Sized, S: Storage> Drop for StorageBox<T, S> {
         //  Safety:
         //  -   `self.handle` was allocated by `self.storage`.
         //  -   `self.handle` is still valid.
-        //  -   `layout` fits the value for which the allocation was made.
-        unsafe { storage.deallocate(self.handle, layout) };
+        unsafe { handle.deallocate(&storage) };
     }
 }
 
@@ -79,22 +69,26 @@ impl<T: ?Sized, S: Storage> StorageBox<T, S> {
     where
         T: Unsize<U>,
     {
-        let metadata = ptr::metadata(&*self as &U);
+        //  Safety:
+        //  -   `self.handle` will never be used ever again.
+        let handle = unsafe { ManuallyDrop::take(&mut self.handle) };
+
         //  Safety:
         //  -   `self.storage` will never be used ever again.
-        let storage = ManuallyDrop::new(unsafe { ManuallyDrop::take(&mut self.storage) });
-
-        let handle = self.handle;
-        let _marker = PhantomData;
+        let storage = unsafe { ManuallyDrop::take(&mut self.storage) };
 
         mem::forget(self);
 
-        StorageBox {
-            metadata,
-            handle,
-            storage,
-            _marker,
-        }
+        //  Safety:
+        //  -   `handle` was allocated by `storage`.
+        //  -   `handle` is still valid.
+        //  -   `handle` is associated to a block of memory containing a live instance of T.
+        let handle = unsafe { handle.coerce(&storage) };
+
+        let handle = ManuallyDrop::new(handle);
+        let storage = ManuallyDrop::new(storage);
+
+        StorageBox { storage, handle }
     }
 }
 
@@ -105,14 +99,8 @@ impl<T: ?Sized, S: Storage> ops::Deref for StorageBox<T, S> {
         //  Safety:
         //  -   `self.handle` was allocated by `self.storage`.
         //  -   `self.handle` is still valid.
-        let pointer = unsafe { self.storage.resolve(self.handle) };
-
-        let pointer = NonNull::from_raw_parts(pointer.cast(), self.metadata);
-
-        //  Safety:
-        //  -   `pointer` points to a valid instance of `T`.
-        //  -   Access to result is shared, as `self` is immutably borrowed for its lifetime.
-        unsafe { pointer.as_ref() }
+        //  -   `handle` is associated to a block of memory containing a live instance of T.
+        unsafe { self.handle.resolve(&*self.storage) }
     }
 }
 
@@ -121,14 +109,8 @@ impl<T: ?Sized, S: Storage> ops::DerefMut for StorageBox<T, S> {
         //  Safety:
         //  -   `self.handle` was allocated by `self.storage`.
         //  -   `self.handle` is still valid.
-        let pointer = unsafe { self.storage.resolve(self.handle) };
-
-        let mut pointer = NonNull::from_raw_parts(pointer.cast(), self.metadata);
-
-        //  Safety:
-        //  -   `pointer` points to a valid instance of `T`.
-        //  -   Access to result is exclusive, as `self` is mutably borrowed for its lifetime.
-        unsafe { pointer.as_mut() }
+        //  -   `handle` is associated to a block of memory containing a live instance of T.
+        unsafe { self.handle.resolve_mut(&*self.storage) }
     }
 }
 

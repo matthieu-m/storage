@@ -5,14 +5,13 @@
 use core::{
     alloc::Layout,
     fmt, hint,
-    marker::PhantomData,
-    mem::{self, MaybeUninit},
+    mem::{self, ManuallyDrop, MaybeUninit},
     ops,
     ptr::{self, NonNull},
     sync::atomic::{AtomicIsize, Ordering},
 };
 
-use crate::interface::Storage;
+use crate::{extension::unique::Unique, interface::Storage};
 
 /// A fixed-capacity vector which can be modified concurrently.
 pub struct ConcurrentVec<T, S: Storage> {
@@ -57,7 +56,7 @@ impl<T, S: Storage> ConcurrentVec<T, S> {
 
     /// Returns the capacity of the vector.
     pub fn capacity(&self) -> usize {
-        self.store.capacity
+        self.store.capacity()
     }
 
     /// Returns a reference to the slice of initialized elements.
@@ -137,7 +136,7 @@ impl<T, S: Storage> ConcurrentVec<T, S> {
         let mut length = self.length.load(Ordering::Acquire);
 
         loop {
-            if length.unsigned_abs() > self.store.capacity {
+            if length.unsigned_abs() > self.store.capacity() {
                 return Err(element);
             }
 
@@ -167,15 +166,15 @@ impl<T, S: Storage> ConcurrentVec<T, S> {
         //  The slot at `length - 1` is ours!
         debug_assert!(length > 0, "{length}");
         debug_assert!(
-            length.unsigned_abs() <= self.store.capacity,
+            length.unsigned_abs() <= self.store.capacity(),
             "{length} > {}",
-            self.store.capacity
+            self.store.capacity()
         );
 
         let slots = self.store.slots();
 
         //  Safety:
-        //  -   `length - 1 < self.store.capacity`, since `length > 0` and `length <= self.store.capacity`.
+        //  -   `length - 1 < self.store.capacity()`, since `length > 0` and `length <= self.store.capacity()`.
         let slot = unsafe { slots.get_unchecked_mut(length as usize - 1) };
 
         //  Safety:
@@ -196,7 +195,7 @@ where
     S: Storage + Clone,
 {
     fn clone(&self) -> Self {
-        let clone = Self::with_storage(self.store.capacity, self.store.storage.clone());
+        let clone = Self::with_storage(self.store.capacity(), self.store.storage.clone());
 
         let elements = self.as_slice();
         let slots = clone.store.slots();
@@ -316,10 +315,8 @@ impl<T, S: Storage> ConcurrentVec<T, S> {
 }
 
 struct Store<T, S: Storage> {
-    capacity: usize,
-    handle: S::Handle,
     storage: S,
-    _marker: PhantomData<T>,
+    handle: ManuallyDrop<Unique<[T], S::Handle>>,
 }
 
 impl<T, S: Storage> Store<T, S> {
@@ -328,14 +325,21 @@ impl<T, S: Storage> Store<T, S> {
         let layout = Layout::array::<T>(capacity).expect("Small enough capacity");
 
         let handle = storage.allocate(layout).expect("Successful allocation");
-        let _marker = PhantomData;
 
-        Self {
-            capacity,
-            handle,
-            storage,
-            _marker,
-        }
+        //  Safety:
+        //  -   `handle` is associated to a block of memory which fits `[T; capacity]`.
+        //  -   `handle` is the unique handle associated to this block of memory.
+        //  -   `capacity` is the suitable metadata for this block of memory.
+        let handle = unsafe { Unique::from_raw_parts(handle, capacity) };
+
+        let handle = ManuallyDrop::new(handle);
+
+        Self { storage, handle }
+    }
+
+    //  Returns the capacity of the storage, in number of elements.
+    fn capacity(&self) -> usize {
+        self.handle.len()
     }
 
     //  Retrieves the slots of storage.
@@ -346,21 +350,20 @@ impl<T, S: Storage> Store<T, S> {
         //  -   `self.handle` has been allocated by `self.storage`.
         //  -   `self.handle` is still valid, since no operation other than `resolve` occurred.
         //  -   The block of memory associated to the handle will only be used as long as `self.handle` is valid.
-        let pointer = unsafe { self.storage.resolve(self.handle) };
-
-        NonNull::slice_from_raw_parts(pointer.cast(), self.capacity)
+        unsafe { self.handle.resolve_raw(&self.storage) }
     }
 }
 
 impl<T, S: Storage> Drop for Store<T, S> {
     fn drop(&mut self) {
-        let layout = Layout::array::<T>(self.capacity).expect("Small enough capacity");
+        //  Safety:
+        //  -   `self.handle` will no longer be used.
+        let handle = unsafe { ManuallyDrop::take(&mut self.handle) };
 
         //  Safety:
-        //  -   `self.handle` has been allocated by `self.storage`.
-        //  -   `self.handle` is still valid, since no operation other than `resolve` occurred.
-        //  -   `layout` fits the layout of the block of memory associated with `self.handle`.
-        unsafe { self.storage.deallocate(self.handle, layout) }
+        //  -   `handle` has been allocated by `self.storage`.
+        //  -   `handle` is still valid, since no operation other than `resolve` occurred.
+        unsafe { handle.deallocate(&self.storage) }
     }
 }
 

@@ -10,6 +10,8 @@
 #![cfg_attr(not(test), no_std)]
 //  Features
 #![feature(allocator_api)]
+#![feature(alloc_layout_extra)]
+#![feature(layout_for_ptr)]
 #![feature(maybe_uninit_write_slice)]
 #![feature(offset_of)]
 #![feature(ptr_as_uninit)]
@@ -23,5 +25,6 @@
 #![allow(incomplete_features)] //  For specialization.
 
 pub mod collection;
+pub mod extension;
 pub mod interface;
 pub mod storage;

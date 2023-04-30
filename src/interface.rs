@@ -178,7 +178,7 @@ pub unsafe trait Storage {
 /// `allocate_zeroed`.
 pub unsafe trait MultipleStorage: Storage {}
 
-/// A refinement of `Storage` which guarantees that the block of memories are pinned in memory.
+/// A refinement of `Storage` which guarantees that the blocks of memory are pinned in memory.
 ///
 /// #   Safety
 ///
