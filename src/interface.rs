@@ -174,8 +174,10 @@ pub unsafe trait Storage {
 ///
 /// #   Safety
 ///
-/// Implementers of this trait must guarantee that existing handles are not invalidated by calls to `allocate` or
-/// `allocate_zeroed`.
+/// Implementers of this trait must guarantee that:
+/// -   Neither existing handles nor existing pointers are invalidated by calls to `allocate`, and `allocate_zeroed`.
+/// -   Neither unrelated existing handles nor unrelated existing pointers are invalidated by calls to `grow`,
+///     `grow_zeroed`, `shrink`, and `deallocate`.
 pub unsafe trait MultipleStorage: Storage {}
 
 /// A refinement of `Storage` which guarantees that the blocks of memory are pinned in memory.
