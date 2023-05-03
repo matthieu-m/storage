@@ -9,6 +9,10 @@ license = "MIT OR Apache-2.0"
 keywords = ["allocator", "collection", "experimental", "nightly", "storage"]
 categories = ["no-std"]
 
+[features]
+default = []
+coercible-metadata = []
+
 [dependencies]
 
 #   For Skip List.

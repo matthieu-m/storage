@@ -7,18 +7,21 @@ use core::{
     ops, ptr,
 };
 
-use crate::{extension::unique::Unique, interface::Storage};
+#[cfg(feature = "coercible-metadata")]
+use core::ops::CoerceUnsized;
+
+use crate::{extension::unique::UniqueHandle, interface::Storage};
 
 /// A `Box` atop a `Storage`.
 pub struct StorageBox<T: ?Sized, S: Storage> {
     storage: ManuallyDrop<S>,
-    handle: ManuallyDrop<Unique<T, S::Handle>>,
+    handle: UniqueHandle<T, S::Handle>,
 }
 
 impl<T, S: Storage> StorageBox<T, S> {
     /// Creates a new instance.
     pub fn new(value: T, storage: S) -> Result<Self, (T, S)> {
-        let Ok(handle) = Unique::allocate(&storage) else {
+        let Ok(handle) = UniqueHandle::allocate(&storage) else {
             return Err((value, storage))
         };
 
@@ -31,7 +34,6 @@ impl<T, S: Storage> StorageBox<T, S> {
         //  -   `pointer` is valid for writes of `Layout::new::<T>().size()` bytes.
         unsafe { ptr::write(pointer.cast().as_ptr(), value) };
 
-        let handle = ManuallyDrop::new(handle);
         let storage = ManuallyDrop::new(storage);
 
         Ok(Self { storage, handle })
@@ -47,16 +49,17 @@ impl<T: ?Sized, S: Storage> Drop for StorageBox<T, S> {
         unsafe { ptr::drop_in_place(value) };
 
         //  Safety:
-        //  -   `self.handle` will never be used ever again.
-        let handle = unsafe { ManuallyDrop::take(&mut self.handle) };
+        //  -   `self.handle` is valid.
+        //  -   `self.handle` will not be used after this point.
+        let handle = unsafe { ptr::read(&self.handle) };
 
         //  Safety:
         //  -   `self.storage` will never be used ever again.
         let storage = unsafe { ManuallyDrop::take(&mut self.storage) };
 
         //  Safety:
-        //  -   `self.handle` was allocated by `self.storage`.
-        //  -   `self.handle` is still valid.
+        //  -   `handle` was allocated by `storage`.
+        //  -   `handle` is still valid.
         unsafe { handle.deallocate(&storage) };
     }
 }
@@ -70,8 +73,9 @@ impl<T: ?Sized, S: Storage> StorageBox<T, S> {
         T: Unsize<U>,
     {
         //  Safety:
-        //  -   `self.handle` will never be used ever again.
-        let handle = unsafe { ManuallyDrop::take(&mut self.handle) };
+        //  -   `self.handle` is valid.
+        //  -   `self.handle` will not be used after this point.
+        let handle = unsafe { ptr::read(&self.handle) };
 
         //  Safety:
         //  -   `self.storage` will never be used ever again.
@@ -79,13 +83,8 @@ impl<T: ?Sized, S: Storage> StorageBox<T, S> {
 
         mem::forget(self);
 
-        //  Safety:
-        //  -   `handle` was allocated by `storage`.
-        //  -   `handle` is still valid.
-        //  -   `handle` is associated to a block of memory containing a live instance of T.
-        let handle = unsafe { handle.coerce(&storage) };
+        let handle = handle.coerce();
 
-        let handle = ManuallyDrop::new(handle);
         let storage = ManuallyDrop::new(storage);
 
         StorageBox { storage, handle }
@@ -125,6 +124,9 @@ where
     }
 }
 
+#[cfg(feature = "coercible-metadata")]
+impl<T, U: ?Sized, S: Storage> CoerceUnsized<StorageBox<U, S>> for StorageBox<T, S> where T: Unsize<U> {}
+
 #[cfg(test)]
 mod test_inline {
     use crate::storage::InlineSingleStorage;
@@ -156,11 +158,35 @@ mod test_inline {
         assert_eq!([1u8, 2, 4], &*boxed);
     }
 
+    #[cfg(feature = "coercible-metadata")]
+    #[test]
+    fn slice_coercion() {
+        let storage = InlineSingleStorage::<[u8; 4]>::default();
+        let boxed = StorageBox::new([1u8, 2, 3], storage).unwrap();
+        let mut boxed: StorageBox<[u8], _> = boxed;
+
+        assert_eq!([1u8, 2, 3], &*boxed);
+
+        boxed[2] = 4;
+
+        assert_eq!([1u8, 2, 4], &*boxed);
+    }
+
     #[test]
     fn trait_storage() {
         let storage = InlineSingleStorage::<[u8; 4]>::default();
         let boxed = StorageBox::new([1u8, 2, 3], storage).unwrap();
         let boxed: StorageBox<dyn fmt::Debug, _> = StorageBox::coerce(boxed);
+
+        assert_eq!("StorageBox([1, 2, 3])", format!("{:?}", boxed));
+    }
+
+    #[cfg(feature = "coercible-metadata")]
+    #[test]
+    fn trait_coercion() {
+        let storage = InlineSingleStorage::<[u8; 4]>::default();
+        let boxed = StorageBox::new([1u8, 2, 3], storage).unwrap();
+        let boxed: StorageBox<dyn fmt::Debug, _> = boxed;
 
         assert_eq!("StorageBox([1, 2, 3])", format!("{:?}", boxed));
     }
@@ -178,6 +204,11 @@ mod test_allocator {
     type NonStorage = AllocatorStorage<NonAllocator>;
 
     #[test]
+    fn sized_failure() {
+        StorageBox::new(1, NonStorage::default()).unwrap_err();
+    }
+
+    #[test]
     fn sized_allocated() {
         let mut boxed = StorageBox::new(1, Storage::default()).unwrap();
 
@@ -189,8 +220,8 @@ mod test_allocator {
     }
 
     #[test]
-    fn sized_failure() {
-        StorageBox::new(1, NonStorage::default()).unwrap_err();
+    fn slice_failure() {
+        StorageBox::new([1u8, 2, 3], NonStorage::default()).unwrap_err();
     }
 
     #[test]
@@ -205,8 +236,21 @@ mod test_allocator {
         assert_eq!([1u8, 2, 4], &*boxed);
     }
 
+    #[cfg(feature = "coercible-metadata")]
     #[test]
-    fn slice_failure() {
+    fn slice_coercion() {
+        let boxed = StorageBox::new([1u8, 2, 3], Storage::default()).unwrap();
+        let mut boxed: StorageBox<[u8], _> = boxed;
+
+        assert_eq!([1u8, 2, 3], &*boxed);
+
+        boxed[2] = 4;
+
+        assert_eq!([1u8, 2, 4], &*boxed);
+    }
+
+    #[test]
+    fn trait_failure() {
         StorageBox::new([1u8, 2, 3], NonStorage::default()).unwrap_err();
     }
 
@@ -218,8 +262,12 @@ mod test_allocator {
         assert_eq!("StorageBox([1, 2, 3])", format!("{:?}", boxed));
     }
 
+    #[cfg(feature = "coercible-metadata")]
     #[test]
-    fn trait_failure() {
-        StorageBox::new([1u8, 2, 3], NonStorage::default()).unwrap_err();
+    fn trait_coercion() {
+        let boxed = StorageBox::new([1u8, 2, 3], Storage::default()).unwrap();
+        let boxed: StorageBox<dyn fmt::Debug, _> = boxed;
+
+        assert_eq!("StorageBox([1, 2, 3])", format!("{:?}", boxed));
     }
 } // mod test_allocator

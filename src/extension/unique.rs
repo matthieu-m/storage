@@ -1,106 +1,85 @@
 //! A typed, unique handle.
 
-use core::{
-    alloc::{AllocError, Layout},
-    marker::Unsize,
-    ptr::{self, NonNull, Pointee},
+use core::{alloc::AllocError, marker::Unsize, ptr::NonNull};
+
+#[cfg(feature = "coercible-metadata")]
+use core::ops::CoerceUnsized;
+
+use crate::{
+    extension::{typed::TypedHandle, typed_metadata::TypedMetadata},
+    interface::Storage,
 };
 
-use crate::interface::Storage;
-
 /// A typed, unique handle.
-pub struct Unique<T: ?Sized, H> {
-    handle: H,
-    metadata: <T as Pointee>::Metadata,
-}
+pub struct UniqueHandle<T: ?Sized, H>(TypedHandle<T, H>);
 
-impl<T, H: Copy> Unique<T, H> {
+impl<T, H: Copy> UniqueHandle<T, H> {
     /// Creates a dangling handle.
     #[inline(always)]
     pub fn dangling<S>() -> Self
     where
         S: Storage<Handle = H>,
     {
-        let handle = S::dangling();
-        let metadata = ();
-
-        Self { handle, metadata }
+        Self(TypedHandle::dangling::<S>())
     }
 
     /// Creates a new handle, pointing to a `T`.
     ///
-    /// Unless `storage` implements `MultipleStorage`, this invalidates all existing handles.
+    /// Unless `storage` implements `MultipleStorage`, this invalidates all existing handles of `storage`.
     #[inline(always)]
     pub fn new<S>(value: T, storage: &S) -> Result<Self, AllocError>
     where
         S: Storage<Handle = H>,
     {
-        let handle = storage.allocate(Layout::new::<T>())?;
-
-        //  Safety:
-        //  -   `handle` was just allocated by `storage`.
-        //  -   `handle` is still valid, as no other operation occurred on `storage`.
-        let pointer = unsafe { storage.resolve(handle) };
-
-        //  Safety:
-        //  -   `pointer` points to writeable memory area.
-        //  -   `pointer` points to a sufficiently aligned and sized memory area.
-        //  -   `pointer` has exclusive access to the memory area it points to.
-        unsafe { ptr::write(pointer.cast().as_ptr(), value) };
-
-        let metadata = ();
-
-        Ok(Self { handle, metadata })
+        TypedHandle::new(value, storage).map(Self)
     }
 
     /// Allocates a new handle, with enough space for `T`.
     ///
     /// The allocated memory is left uninitialized.
     ///
-    /// Unless `storage` implements `MultipleStorage`, this invalidates all existing handles.
+    /// Unless `storage` implements `MultipleStorage`, this invalidates all existing handles of `storage`.
     #[inline(always)]
     pub fn allocate<S>(storage: &S) -> Result<Self, AllocError>
     where
         S: Storage<Handle = H>,
     {
-        let handle = storage.allocate(Layout::new::<T>())?;
-        let metadata = ();
-
-        Ok(Self { handle, metadata })
+        TypedHandle::allocate(storage).map(Self)
     }
 
     /// Allocates a new handle, with enough space for `T`.
     ///
     /// The allocated memory is zeroed out.
     ///
-    /// Unless `storage` implements `MultipleStorage`, this invalidates all existing handles.
+    /// Unless `storage` implements `MultipleStorage`, this invalidates all existing handles of `storage`.
     #[inline(always)]
     pub fn allocate_zeroed<S>(storage: &S) -> Result<Self, AllocError>
     where
         S: Storage<Handle = H>,
     {
-        let handle = storage.allocate_zeroed(Layout::new::<T>())?;
-        let metadata = ();
-
-        Ok(Self { handle, metadata })
+        TypedHandle::allocate_zeroed(storage).map(Self)
     }
 }
 
-impl<T: ?Sized, H: Copy> Unique<T, H> {
+impl<T: ?Sized, H: Copy> UniqueHandle<T, H> {
     /// Creates a handle from raw parts.
+    ///
+    /// -   If `handle` is valid, and associated to a block of memory which fits an instance of `T`, then the resulting
+    ///     typed handle is valid.
+    /// -   If `handle` is invalid, then the resulting typed handle is invalid.
+    /// -   If `handle` is valid and `metadata` does not fit the block of memory associated with it, then the resulting
+    ///     typed handle is invalid.
     ///
     /// #   Safety
     ///
-    /// -   `handle` must be associated to a block of memory which fits an instance of `T`.
-    /// -   `handle` must be the only handle to this block of memory.
-    /// -   `metadata` must be the metadata of this instance of `T`.
-    pub unsafe fn from_raw_parts(handle: H, metadata: <T as Pointee>::Metadata) -> Self {
-        Self { handle, metadata }
+    /// -   No copy of `handle` must be used henceforth.
+    pub unsafe fn from_raw_parts(handle: H, metadata: TypedMetadata<T>) -> Self {
+        Self(TypedHandle::from_raw_parts(handle, metadata))
     }
 
     /// Decomposes a (possibly wide) pointer into its handle and metadata components.
-    pub fn to_raw_parts(self) -> (H, <T as Pointee>::Metadata) {
-        (self.handle, self.metadata)
+    pub fn to_raw_parts(self) -> (H, TypedMetadata<T>) {
+        self.0.to_raw_parts()
     }
 
     /// Deallocates the memory associated with the handle.
@@ -115,19 +94,9 @@ impl<T: ?Sized, H: Copy> Unique<T, H> {
         S: Storage<Handle = H>,
     {
         //  Safety:
-        //  -   `self.handle` was allocated by `storage`, as per pre-conditions.
-        //  -   `self.handle` is still valid, as per pre-conditions.
-        let pointer = unsafe { self.resolve_raw(storage) };
-
-        //  Safety:
-        //  -   `pointer` has valid metadata for `T`.
-        let layout = unsafe { Layout::for_value_raw(pointer.as_ptr() as *const T) };
-
-        //  Safety:
-        //  -   `self.handle` was allocated by `storage`, as per pre-conditions.
-        //  -   `self.handle` is still valid, as per pre-conditions.
-        //  -   `layout` fits the block of memory associated with `self.handle`.
-        unsafe { storage.deallocate(self.handle, layout) };
+        //  -   `self.0` has been allocated by `storage`, as per pre-conditions.
+        //  -   `self.0` is valid, as per pre-conditions.
+        unsafe { self.0.deallocate(storage) }
     }
 
     /// Resolves the handle to a reference, borrowing the handle.
@@ -202,52 +171,28 @@ impl<T: ?Sized, H: Copy> Unique<T, H> {
         //  Safety:
         //  -   `self.handle` was allocated by `storage`, as per pre-conditions.
         //  -   `self.handle` is still valid, as per pre-conditions.
-        let pointer = unsafe { storage.resolve(self.handle) };
-
-        NonNull::from_raw_parts(pointer.cast(), self.metadata)
+        unsafe { self.0.resolve_raw(storage) }
     }
 
     /// Coerces the handle into another.
-    ///
-    /// #   Safety
-    ///
-    /// -   `self` must have been allocated by `storage`.
-    /// -   `self` must still be valid.
-    /// -   `self` must be associated to a block of memory containing a valid instance of `T`.
     #[inline(always)]
-    pub unsafe fn coerce<U, S>(self, storage: &S) -> Unique<U, H>
+    pub fn coerce<U: ?Sized>(self) -> UniqueHandle<U, H>
     where
         T: Unsize<U>,
-        U: ?Sized,
-        S: Storage<Handle = H>,
     {
-        //  Safety:
-        //  -   `self.handle` was allocated by `storage`, as per pre-conditions.
-        //  -   `self.handle` is still valid, as per pre-conditions.
-        //  -   `self.handle` is associated to a block of memory containing a live instance of `T`, as per
-        //      pre-conditions.
-        let t = unsafe { self.resolve(storage) };
-
-        let u: &U = t;
-
-        let (_, metadata) = NonNull::to_raw_parts(NonNull::from(u));
-
-        Unique {
-            handle: self.handle,
-            metadata,
-        }
+        UniqueHandle(self.0.coerce())
     }
 }
 
-impl<T, H: Copy> Unique<[T], H> {
+impl<T, H: Copy> UniqueHandle<[T], H> {
     /// Returns whether the memory area associated to `self` may not contain any element.
     pub fn is_empty(&self) -> bool {
-        self.metadata == 0
+        self.0.is_empty()
     }
 
     /// Returns the number of elements the memory area associated to `self` may contain.
     pub fn len(&self) -> usize {
-        self.metadata
+        self.0.len()
     }
 
     /// Grows the block of memory associated with the handle.
@@ -263,21 +208,11 @@ impl<T, H: Copy> Unique<[T], H> {
     where
         S: Storage<Handle = H>,
     {
-        debug_assert!(new_size >= self.len());
-
-        let (old_layout, _) = Layout::new::<T>().repeat(self.len()).map_err(|_| AllocError)?;
-        let (new_layout, _) = Layout::new::<T>().repeat(new_size).map_err(|_| AllocError)?;
-
         //  Safety:
-        //  -   `self.handle` was allocated by `storage`, as per pre-conditions.
-        //  -   `self.handle` is still valid, as per pre-conditions.
-        //  -   `old_layout` fits the block of memory associated to `self.handle`, by construction.
-        //  -   `new_layout`'s size is greater than or equal to the size of `old_layout`, as per pre-conditions.
-        self.handle = unsafe { storage.grow(self.handle, old_layout, new_layout)? };
-
-        self.metadata = new_size;
-
-        Ok(())
+        //  -   `self.0` has been allocated by `storage`, as per pre-conditions.
+        //  -   `self.0` is still valid, as per pre-conditions.
+        //  -   `new_size` is greater than or equal to `self.0.len()`.
+        unsafe { self.0.grow(new_size, storage) }
     }
 
     /// Grows the block of memory associated with the handle.
@@ -293,21 +228,11 @@ impl<T, H: Copy> Unique<[T], H> {
     where
         S: Storage<Handle = H>,
     {
-        debug_assert!(new_size >= self.len());
-
-        let (old_layout, _) = Layout::new::<T>().repeat(self.len()).map_err(|_| AllocError)?;
-        let (new_layout, _) = Layout::new::<T>().repeat(new_size).map_err(|_| AllocError)?;
-
         //  Safety:
-        //  -   `self.handle` was allocated by `storage`, as per pre-conditions.
-        //  -   `self.handle` is still valid, as per pre-conditions.
-        //  -   `old_layout` fits the block of memory associated to `self.handle`, by construction.
-        //  -   `new_layout`'s size is greater than or equal to the size of `old_layout`, as per pre-conditions.
-        self.handle = unsafe { storage.grow_zeroed(self.handle, old_layout, new_layout)? };
-
-        self.metadata = new_size;
-
-        Ok(())
+        //  -   `self.0` has been allocated by `storage`, as per pre-conditions.
+        //  -   `self.0` is still valid, as per pre-conditions.
+        //  -   `new_size` is greater than or equal to `self.0.len()`.
+        unsafe { self.0.grow_zeroed(new_size, storage) }
     }
 
     /// Shrinks the block of memory associated with the handle.
@@ -323,20 +248,13 @@ impl<T, H: Copy> Unique<[T], H> {
     where
         S: Storage<Handle = H>,
     {
-        debug_assert!(new_size <= self.len());
-
-        let (old_layout, _) = Layout::new::<T>().repeat(self.len()).map_err(|_| AllocError)?;
-        let (new_layout, _) = Layout::new::<T>().repeat(new_size).map_err(|_| AllocError)?;
-
         //  Safety:
-        //  -   `self.handle` was allocated by `storage`, as per pre-conditions.
-        //  -   `self.handle` is still valid, as per pre-conditions.
-        //  -   `old_layout` fits the block of memory associated to `self.handle`, by construction.
-        //  -   `new_layout`'s size is less than or equal to the size of `old_layout`, as per pre-conditions.
-        self.handle = unsafe { storage.shrink(self.handle, old_layout, new_layout)? };
-
-        self.metadata = new_size;
-
-        Ok(())
+        //  -   `self.0` has been allocated by `storage`, as per pre-conditions.
+        //  -   `self.0` is still valid, as per pre-conditions.
+        //  -   `new_size` is less than or equal to `self.0.len()`.
+        unsafe { self.0.shrink(new_size, storage) }
     }
 }
+
+#[cfg(feature = "coercible-metadata")]
+impl<T, U: ?Sized, H: Copy> CoerceUnsized<UniqueHandle<U, H>> for UniqueHandle<T, H> where T: Unsize<U> {}

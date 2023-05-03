@@ -11,7 +11,7 @@ use core::{
     sync::atomic::{AtomicIsize, Ordering},
 };
 
-use crate::{extension::unique::Unique, interface::Storage};
+use crate::{extension::unique::UniqueHandle, interface::Storage};
 
 /// A fixed-capacity vector which can be modified concurrently.
 pub struct ConcurrentVec<T, S: Storage> {
@@ -316,7 +316,7 @@ impl<T, S: Storage> ConcurrentVec<T, S> {
 
 struct Store<T, S: Storage> {
     storage: S,
-    handle: ManuallyDrop<Unique<[T], S::Handle>>,
+    handle: ManuallyDrop<UniqueHandle<[T], S::Handle>>,
 }
 
 impl<T, S: Storage> Store<T, S> {
@@ -330,7 +330,7 @@ impl<T, S: Storage> Store<T, S> {
         //  -   `handle` is associated to a block of memory which fits `[T; capacity]`.
         //  -   `handle` is the unique handle associated to this block of memory.
         //  -   `capacity` is the suitable metadata for this block of memory.
-        let handle = unsafe { Unique::from_raw_parts(handle, capacity) };
+        let handle = unsafe { UniqueHandle::from_raw_parts(handle, capacity.into()) };
 
         let handle = ManuallyDrop::new(handle);
 

@@ -11,6 +11,7 @@
 //  Features
 #![feature(allocator_api)]
 #![feature(alloc_layout_extra)]
+#![feature(coerce_unsized)]
 #![feature(layout_for_ptr)]
 #![feature(maybe_uninit_write_slice)]
 #![feature(offset_of)]
