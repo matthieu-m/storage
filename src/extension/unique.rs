@@ -116,15 +116,13 @@ impl<T: ?Sized, H: Copy> UniqueHandle<T, H> {
         //  Safety:
         //  -   `self.handle` was allocated by `storage`, as per pre-conditions.
         //  -   `self.handle` is still valid, as per pre-conditions.
-        let pointer = unsafe { self.resolve_raw(storage) };
-
-        //  Safety:
-        //  -   `pointer` points to a live instance of `T`, as per type-invariant.
+        //  -   `self.handle` is associated with a block of memory containing a live instance of `T`, as per
+        //      pre-conditions.
         //  -   The resulting reference borrows `self` immutably, guaranteeing that no mutable reference exist, nor can
         //      be creating during its lifetime.
         //  -   The resulting reference borrows `storage` immutably, guaranteeing it won't be invalidated by moving
         //      or destroying storage, though it may still be invalidated by allocating.
-        unsafe { pointer.as_ref() }
+        unsafe { self.0.resolve(storage) }
     }
 
     /// Resolves the handle to a reference, borrowing the handle.
@@ -144,15 +142,13 @@ impl<T: ?Sized, H: Copy> UniqueHandle<T, H> {
         //  Safety:
         //  -   `self.handle` was allocated by `storage`, as per pre-conditions.
         //  -   `self.handle` is still valid, as per pre-conditions.
-        let mut pointer = unsafe { self.resolve_raw(storage) };
-
-        //  Safety:
-        //  -   `pointer` points to a live instance of `T`, as per type-invariant.
+        //  -   `self.handle` is associated with a block of memory containing a live instance of `T`, as per
+        //      pre-conditions.
         //  -   The resulting reference borrows `self` mutably, guaranteeing that no reference exist, nor can be
         //      created during its lifetime.
         //  -   The resulting reference borrows `storage` immutably, guaranteeing it won't be invalidated by moving
         //      or destroying storage, though it may still be invalidated by allocating.
-        unsafe { pointer.as_mut() }
+        unsafe { self.0.resolve_mut(storage) }
     }
 
     /// Resolves the handle to a reference, borrowing the handle.
@@ -199,7 +195,7 @@ impl<T, H: Copy> UniqueHandle<[T], H> {
     ///
     /// On success, the extra memory is left uninitialized. On failure, an error is returned.
     ///
-    /// #   Safety:
+    /// #   Safety
     ///
     /// -   `self` must have been allocated by `storage`.
     /// -   `self` must still be valid.
@@ -219,7 +215,7 @@ impl<T, H: Copy> UniqueHandle<[T], H> {
     ///
     /// On success, the extra memory is zeroed. On failure, an error is returned.
     ///
-    /// #   Safety:
+    /// #   Safety
     ///
     /// -   `self` must have been allocated by `storage`.
     /// -   `self` must still be valid.
@@ -239,7 +235,7 @@ impl<T, H: Copy> UniqueHandle<[T], H> {
     ///
     /// On failure, an error is returned.
     ///
-    /// #   Safety:
+    /// #   Safety
     ///
     /// -   `self` must have been allocated by `storage`.
     /// -   `self` must still be valid.

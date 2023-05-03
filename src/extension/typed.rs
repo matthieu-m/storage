@@ -138,6 +138,61 @@ impl<T: ?Sized, H: Copy> TypedHandle<T, H> {
         unsafe { storage.deallocate(self.handle, layout) };
     }
 
+    /// Resolves the handle to a reference.
+    ///
+    /// #   Safety
+    ///
+    /// -   `self` must have been allocated by `storage`.
+    /// -   `self` must still be valid.
+    /// -   `self` must be associated to a block of memory containing a valid instance of `T`.
+    /// -   No access through a mutable reference to this instance of `T` must overlap with accesses through the result.
+    /// -   The reference is only guaranteed to be valid as long as `self` is valid. Most notably, unless `storage`
+    ///     implements `MultipleStorage` allocating from `storage` will invalidate it.
+    #[inline(always)]
+    pub unsafe fn resolve<'a, S>(&self, storage: &'a S) -> &'a T
+    where
+        S: Storage<Handle = H>,
+    {
+        //  Safety:
+        //  -   `self.handle` was allocated by `storage`, as per pre-conditions.
+        //  -   `self.handle` is still valid, as per pre-conditions.
+        let pointer = unsafe { self.resolve_raw(storage) };
+
+        //  Safety:
+        //  -   `pointer` points to a live instance of `T`, as per type-invariant.
+        //  -   The resulting reference borrows `storage` immutably, guaranteeing it won't be invalidated by moving
+        //      or destroying storage, though it may still be invalidated by allocating.
+        unsafe { pointer.as_ref() }
+    }
+
+    /// Resolves the handle to a reference.
+    ///
+    /// #   Safety
+    ///
+    /// -   `self` must have been allocated by `storage`.
+    /// -   `self` must still be valid.
+    /// -   `self` must be associated to a block of memory containing a valid instance of `T`.
+    /// -   No access through any reference to this instance of `T` must overlap with accesses through the result.
+    /// -   The reference is only guaranteed to be valid as long as `self` is valid. Most notably, unless `storage`
+    ///     implements `MultipleStorage` allocating from `storage` will invalidate it.
+    #[inline(always)]
+    #[allow(clippy::mut_from_ref)]
+    pub unsafe fn resolve_mut<'a, S>(&mut self, storage: &'a S) -> &'a mut T
+    where
+        S: Storage<Handle = H>,
+    {
+        //  Safety:
+        //  -   `self.handle` was allocated by `storage`, as per pre-conditions.
+        //  -   `self.handle` is still valid, as per pre-conditions.
+        let mut pointer = unsafe { self.resolve_raw(storage) };
+
+        //  Safety:
+        //  -   `pointer` points to a live instance of `T`, as per type-invariant.
+        //  -   The resulting reference borrows `storage` immutably, guaranteeing it won't be invalidated by moving
+        //      or destroying storage, though it may still be invalidated by allocating.
+        unsafe { pointer.as_mut() }
+    }
+
     /// Resolves the handle to a non-null pointer.
     ///
     /// #   Safety
@@ -192,7 +247,7 @@ impl<T, H: Copy> TypedHandle<[T], H> {
     /// On success, all the copies of the handle are invalidated, and the extra memory is left uninitialized. On
     /// failure, an error is returned.
     ///
-    /// #   Safety:
+    /// #   Safety
     ///
     /// -   `self` must have been allocated by `storage`.
     /// -   `self` must still be valid.
@@ -223,7 +278,7 @@ impl<T, H: Copy> TypedHandle<[T], H> {
     /// On success, all the copies of the handle are invalidated, and the extra memory is zeroed. On failure, an error
     /// is returned.
     ///
-    /// #   Safety:
+    /// #   Safety
     ///
     /// -   `self` must have been allocated by `storage`.
     /// -   `self` must still be valid.
@@ -253,7 +308,7 @@ impl<T, H: Copy> TypedHandle<[T], H> {
     ///
     /// On success, all the copies of the handle are invalidated. On failure, an error is returned.
     ///
-    /// #   Safety:
+    /// #   Safety
     ///
     /// -   `self` must have been allocated by `storage`.
     /// -   `self` must still be valid.
