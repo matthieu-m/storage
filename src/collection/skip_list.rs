@@ -15,11 +15,11 @@ use oorandom::Rand32;
 
 use crate::{
     extension::{typed::TypedHandle, typed_metadata::TypedMetadata},
-    interface::{MultipleStorage, Storage},
+    interface::{MultipleStorage, StableStorage, Storage},
 };
 
 /// A Skip List, with minimal memory usage.
-pub struct SkipList<K, V, S: MultipleStorage> {
+pub struct SkipList<K, V, S: Storage> {
     //  Invariant: `length == 0` => `head` is a dangling handle.
     length: usize,
     head: NodeHandle<K, V, S::Handle>,
@@ -27,7 +27,7 @@ pub struct SkipList<K, V, S: MultipleStorage> {
     prng: Rand32,
 }
 
-impl<K, V, S: MultipleStorage> SkipList<K, V, S> {
+impl<K, V, S: Storage> SkipList<K, V, S> {
     /// Creates a new, empty, instance.
     pub fn new() -> Self
     where
@@ -108,7 +108,7 @@ impl<K, V, S: MultipleStorage> SkipList<K, V, S> {
     }
 }
 
-impl<K, V, S: MultipleStorage> SkipList<K, V, S>
+impl<K, V, S: MultipleStorage + StableStorage> SkipList<K, V, S>
 where
     K: Ord,
 {
@@ -308,7 +308,7 @@ where
     }
 }
 
-impl<K, V, S: MultipleStorage> Drop for SkipList<K, V, S> {
+impl<K, V, S: Storage> Drop for SkipList<K, V, S> {
     fn drop(&mut self) {
         self.clear();
     }
@@ -329,7 +329,7 @@ where
 
 const MAX_NUMBER_LINKS: usize = 32;
 
-impl<K, V, S: MultipleStorage> SkipList<K, V, S> {
+impl<K, V, S: Storage> SkipList<K, V, S> {
     //  Returns the number of links a (new) node should have.
     fn determine_number_links(&mut self) -> usize {
         (self.prng.rand_u32() | 1).trailing_ones() as usize
@@ -358,7 +358,7 @@ impl<K, V, S: MultipleStorage> SkipList<K, V, S> {
     }
 }
 
-impl<K, V, S: MultipleStorage> SkipList<K, V, S>
+impl<K, V, S: MultipleStorage + StableStorage> SkipList<K, V, S>
 where
     K: Ord,
 {
@@ -448,7 +448,7 @@ where
     #[allow(clippy::new_ret_no_self, clippy::type_complexity)]
     fn new<S>(key: K, value: V, number_links: usize, storage: &S) -> (NodeHandle<K, V, H>, &mut [NodeHandle<K, V, H>])
     where
-        S: Storage<Handle = H> + MultipleStorage,
+        S: Storage<Handle = H>,
     {
         let (layout, offset) = Self::layout(number_links);
 
@@ -515,7 +515,7 @@ where
         storage: &S,
     ) -> NodeHandle<K, V, H>
     where
-        S: Storage<Handle = H> + MultipleStorage,
+        S: Storage<Handle = H>,
     {
         let (old_layout, offset) = Self::layout(old_number_links);
         let (new_layout, _) = Self::layout(new_number_links);
@@ -574,7 +574,7 @@ where
     //  -   No other reference to its block of memory is active.
     unsafe fn deallocate<S>(mut handle: NodeHandle<K, V, H>, storage: &S) -> (K, V)
     where
-        S: Storage<Handle = H> + MultipleStorage,
+        S: Storage<Handle = H>,
     {
         //  Safety:
         //  -   `handle` was allocated by `storage`, and is still valid, as per pre-conditions.

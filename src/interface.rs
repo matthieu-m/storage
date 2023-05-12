@@ -15,15 +15,28 @@ use core::{
 /// Only valid handles may be safely resolved. When a handle is invalidated, all its copies are also invalidated at the
 /// same time, and all pointers resolved from the handle or any of its copies are invalidated as well.
 ///
-/// Invalidation:
+/// Handle Invalidation:
 ///
-/// -   All handles allocated by an instance of `Storage` are invalidated when calling `Storage::allocate` or
-///     `Storage::allocate_zeroed` on this instance of `Storage`.
+/// -   All handles allocated by an instance of `Storage` may be invalidated when calling `Storage::allocate` or
+///     `Storage::allocate_zeroed` on this instance of `Storage`. Handles are only guaranteed to remain valid across
+///     calls to these methods for instances also implementing `MultipleStorage`.
 /// -   A handle is immediately invalidated when used as an argument to the `Storage::deallocate` method.
 /// -   A handle is invalidated when used as an argument to the `Storage::grow`, `Storage::grow_zeroed`, or
 ///     `Storage::shrink` and these methods succeed.
 ///
-/// A specific implementation of Storage may provide extended validity guarantees.
+/// Pointer Invalidation:
+///
+/// -   All pointers resolved by an instance of `Storage` may be invalidated when moving this instance of `Storage`.
+///     Pointers are only guaranteed to remain valid across moves for instances also implementing `PinningStorage`.
+/// -   All pointers resolved by an instance of `Storage` may be invalidated when calling `Storage::allocate`,
+///     `Storage::deallocate`, `Storage::grow`, `Storage::shrink`, or their zeroed variants. Pointers are only
+///     guaranteed to remain valid across those calls for instances also implementing `StableStorage`.
+/// -   All pointers resolved by an instance of `Storage` from a _different_ handle may be invalidated when calling
+///     `Storage::resolve`. Pointers from different handles are only guaranteed to remain valid across those calls for
+///     instances also implementing `StableStorage`.
+///
+/// A specific implementation of Storage may provide extended validity guarantees, and should implement the extended
+/// guarantees traits when it does so.
 pub unsafe trait Storage {
     /// A Handle to memory allocated by the instance of Storage which creates it.
     type Handle: Copy;
@@ -175,18 +188,34 @@ pub unsafe trait Storage {
 /// #   Safety
 ///
 /// Implementers of this trait must guarantee that:
-/// -   Neither existing handles nor existing pointers are invalidated by calls to `allocate`, and `allocate_zeroed`.
-/// -   Neither unrelated existing handles nor unrelated existing pointers are invalidated by calls to `grow`,
-///     `grow_zeroed`, `shrink`, and `deallocate`.
+///
+/// -   Existing handles are not invalidated by calls to `allocate`, and `allocate_zeroed`.
+/// -   Unrelated existing handles are not invalidated by calls to `grow`, `grow_zeroed`, `shrink`, and `deallocate`.
+///
+/// This trait provides no guarantee with regard to the stability of resolved pointers, for such guarantees see
+/// `StableStorage` and `PinningStorage`.
 pub unsafe trait MultipleStorage: Storage {}
+
+/// A refinement of `Storage` which guarantees that the blocks of memory are stable in memory across method calls, but
+/// not necessarily across moves.
+///
+/// If the blocks of memory should be stable in memory across moves as well, then `PinningStorage` is required.
+///
+/// #   Safety
+///
+/// Implementers of this trait must guarantee that a handle always resolve to the same block of memory for as long as
+/// it is valid and the instance of `Storage` has not moved.
+///
+/// It is common but not required for implementers of this trait to also implement `MultipleStorage`.
+pub unsafe trait StableStorage: Storage {}
 
 /// A refinement of `Storage` which guarantees that the blocks of memory are pinned in memory.
 ///
 /// #   Safety
 ///
-/// Implementers of this trait must guarantee that `handle` always resolve to the same block of memory for as long as
+/// Implementers of this trait must guarantee that handle always resolve to the same block of memory for as long as
 /// it is valid.
-pub unsafe trait PinningStorage: Storage {}
+pub unsafe trait PinningStorage: StableStorage {}
 
 //
 //  Provided for convenience.

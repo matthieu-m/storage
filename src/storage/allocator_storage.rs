@@ -5,7 +5,7 @@ use core::{
     ptr::NonNull,
 };
 
-use crate::interface::{MultipleStorage, PinningStorage, Storage};
+use crate::interface::{MultipleStorage, PinningStorage, StableStorage, Storage};
 
 /// Adapter of the `Allocator` API to the `Storage` API.
 #[derive(Clone, Copy, Debug, Default)]
@@ -105,6 +105,10 @@ where
 //  Safety:
 //  -   `Allocator` does not invalidate existing allocations when allocating.
 unsafe impl<A> MultipleStorage for AllocatorStorage<A> where A: Allocator {}
+
+//  Safety:
+//  -   `Allocator` allocations are pinned.
+unsafe impl<A> StableStorage for AllocatorStorage<A> where A: Allocator {}
 
 //  Safety:
 //  -   `Allocator` allocations are pinned.
