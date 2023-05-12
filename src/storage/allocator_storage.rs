@@ -7,18 +7,7 @@ use core::{
 
 use crate::interface::{MultipleStorage, PinningStorage, StableStorage, Storage};
 
-/// Adapter of the `Allocator` API to the `Storage` API.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct AllocatorStorage<A>(A);
-
-impl<A> AllocatorStorage<A> {
-    /// Creates a new instance, with the specific allocator.
-    pub fn new(allocator: A) -> Self {
-        Self(allocator)
-    }
-}
-
-unsafe impl<A> Storage for AllocatorStorage<A>
+unsafe impl<A> Storage for A
 where
     A: Allocator,
 {
@@ -29,14 +18,14 @@ where
     }
 
     fn allocate(&self, layout: Layout) -> Result<Self::Handle, AllocError> {
-        self.0.allocate(layout).map(|slice| slice.as_non_null_ptr())
+        Allocator::allocate(self, layout).map(|slice| slice.as_non_null_ptr())
     }
 
     unsafe fn deallocate(&self, handle: Self::Handle, layout: Layout) {
         //  Safety:
         //  -   `handle` is valid, as per the pre-conditions of `deallocate`.
         //  -   `layout` fits, as per the pre-conditions of `deallocate`.
-        unsafe { self.0.deallocate(handle, layout) };
+        unsafe { Allocator::deallocate(self, handle, layout) };
     }
 
     unsafe fn resolve(&self, handle: Self::Handle) -> NonNull<u8> {
@@ -54,11 +43,7 @@ where
         //  -   `old_layout` fits, as per the pre-conditions of `grow`.
         //  -   `new_layout.size()` is greater than or equal to `old_layout.size()`, as per the pre-conditions of
         //      `grow`.
-        unsafe {
-            self.0
-                .grow(handle, old_layout, new_layout)
-                .map(|slice| slice.as_non_null_ptr())
-        }
+        unsafe { Allocator::grow(self, handle, old_layout, new_layout).map(|slice| slice.as_non_null_ptr()) }
     }
 
     unsafe fn shrink(
@@ -72,15 +57,11 @@ where
         //  -   `old_layout` fits, as per the pre-conditions of `shrink`.
         //  -   `new_layout.size()` is smaller than or equal to `old_layout.size()`, as per the pre-conditions of
         //      `shrink`.
-        unsafe {
-            self.0
-                .shrink(handle, old_layout, new_layout)
-                .map(|slice| slice.as_non_null_ptr())
-        }
+        unsafe { Allocator::shrink(self, handle, old_layout, new_layout).map(|slice| slice.as_non_null_ptr()) }
     }
 
     fn allocate_zeroed(&self, layout: Layout) -> Result<Self::Handle, AllocError> {
-        self.0.allocate_zeroed(layout).map(|slice| slice.as_non_null_ptr())
+        Allocator::allocate_zeroed(self, layout).map(|slice| slice.as_non_null_ptr())
     }
 
     unsafe fn grow_zeroed(
@@ -94,22 +75,18 @@ where
         //  -   `old_layout` fits, as per the pre-conditions of `grow_zeroed`.
         //  -   `new_layout.size()` is greater than or equal to `old_layout.size()`, as per the pre-conditions of
         //      `grow_zeroed`.
-        unsafe {
-            self.0
-                .grow_zeroed(handle, old_layout, new_layout)
-                .map(|slice| slice.as_non_null_ptr())
-        }
+        unsafe { Allocator::grow_zeroed(self, handle, old_layout, new_layout).map(|slice| slice.as_non_null_ptr()) }
     }
 }
 
 //  Safety:
 //  -   `Allocator` does not invalidate existing allocations when allocating.
-unsafe impl<A> MultipleStorage for AllocatorStorage<A> where A: Allocator {}
+unsafe impl<A> MultipleStorage for A where A: Allocator {}
 
 //  Safety:
 //  -   `Allocator` allocations are pinned.
-unsafe impl<A> StableStorage for AllocatorStorage<A> where A: Allocator {}
+unsafe impl<A> StableStorage for A where A: Allocator {}
 
 //  Safety:
 //  -   `Allocator` allocations are pinned.
-unsafe impl<A> PinningStorage for AllocatorStorage<A> where A: Allocator {}
+unsafe impl<A> PinningStorage for A where A: Allocator {}

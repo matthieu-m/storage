@@ -196,21 +196,18 @@ mod test_inline {
 mod test_allocator {
     use std::alloc::System;
 
-    use crate::{collection::utils::NonAllocator, storage::AllocatorStorage};
+    use crate::collection::utils::NonAllocator;
 
     use super::*;
 
-    type Storage = AllocatorStorage<System>;
-    type NonStorage = AllocatorStorage<NonAllocator>;
-
     #[test]
     fn sized_failure() {
-        StorageBox::new(1, NonStorage::default()).unwrap_err();
+        StorageBox::new(1, NonAllocator::default()).unwrap_err();
     }
 
     #[test]
     fn sized_allocated() {
-        let mut boxed = StorageBox::new(1, Storage::default()).unwrap();
+        let mut boxed = StorageBox::new(1, System::default()).unwrap();
 
         assert_eq!(1u32, *boxed);
 
@@ -221,12 +218,12 @@ mod test_allocator {
 
     #[test]
     fn slice_failure() {
-        StorageBox::new([1u8, 2, 3], NonStorage::default()).unwrap_err();
+        StorageBox::new([1u8, 2, 3], NonAllocator::default()).unwrap_err();
     }
 
     #[test]
     fn slice_allocated() {
-        let boxed = StorageBox::new([1u8, 2, 3], Storage::default()).unwrap();
+        let boxed = StorageBox::new([1u8, 2, 3], System::default()).unwrap();
         let mut boxed: StorageBox<[u8], _> = StorageBox::coerce(boxed);
 
         assert_eq!([1u8, 2, 3], &*boxed);
@@ -239,7 +236,7 @@ mod test_allocator {
     #[cfg(feature = "coercible-metadata")]
     #[test]
     fn slice_coercion() {
-        let boxed = StorageBox::new([1u8, 2, 3], Storage::default()).unwrap();
+        let boxed = StorageBox::new([1u8, 2, 3], System::default()).unwrap();
         let mut boxed: StorageBox<[u8], _> = boxed;
 
         assert_eq!([1u8, 2, 3], &*boxed);
@@ -251,12 +248,12 @@ mod test_allocator {
 
     #[test]
     fn trait_failure() {
-        StorageBox::new([1u8, 2, 3], NonStorage::default()).unwrap_err();
+        StorageBox::new([1u8, 2, 3], NonAllocator::default()).unwrap_err();
     }
 
     #[test]
     fn trait_allocated() {
-        let boxed = StorageBox::new([1u8, 2, 3], Storage::default()).unwrap();
+        let boxed = StorageBox::new([1u8, 2, 3], System::default()).unwrap();
         let boxed: StorageBox<dyn fmt::Debug, _> = StorageBox::coerce(boxed);
 
         assert_eq!("StorageBox([1, 2, 3])", format!("{:?}", boxed));
@@ -265,7 +262,7 @@ mod test_allocator {
     #[cfg(feature = "coercible-metadata")]
     #[test]
     fn trait_coercion() {
-        let boxed = StorageBox::new([1u8, 2, 3], Storage::default()).unwrap();
+        let boxed = StorageBox::new([1u8, 2, 3], System::default()).unwrap();
         let boxed: StorageBox<dyn fmt::Debug, _> = boxed;
 
         assert_eq!("StorageBox([1, 2, 3])", format!("{:?}", boxed));
