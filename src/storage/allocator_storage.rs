@@ -17,8 +17,8 @@ where
         NonNull::dangling()
     }
 
-    fn allocate(&self, layout: Layout) -> Result<Self::Handle, AllocError> {
-        Allocator::allocate(self, layout).map(|slice| slice.as_non_null_ptr())
+    fn allocate(&self, layout: Layout) -> Result<(Self::Handle, usize), AllocError> {
+        Allocator::allocate(self, layout).map(|slice| (slice.as_non_null_ptr(), slice.len()))
     }
 
     unsafe fn deallocate(&self, handle: Self::Handle, layout: Layout) {
@@ -37,13 +37,15 @@ where
         handle: Self::Handle,
         old_layout: Layout,
         new_layout: Layout,
-    ) -> Result<Self::Handle, AllocError> {
+    ) -> Result<(Self::Handle, usize), AllocError> {
         //  Safety:
         //  -   `handle` is valid, as per the pre-conditions of `grow`.
         //  -   `old_layout` fits, as per the pre-conditions of `grow`.
         //  -   `new_layout.size()` is greater than or equal to `old_layout.size()`, as per the pre-conditions of
         //      `grow`.
-        unsafe { Allocator::grow(self, handle, old_layout, new_layout).map(|slice| slice.as_non_null_ptr()) }
+        unsafe {
+            Allocator::grow(self, handle, old_layout, new_layout).map(|slice| (slice.as_non_null_ptr(), slice.len()))
+        }
     }
 
     unsafe fn shrink(
@@ -51,17 +53,19 @@ where
         handle: Self::Handle,
         old_layout: Layout,
         new_layout: Layout,
-    ) -> Result<Self::Handle, AllocError> {
+    ) -> Result<(Self::Handle, usize), AllocError> {
         //  Safety:
         //  -   `handle` is valid, as per the pre-conditions of `shrink`.
         //  -   `old_layout` fits, as per the pre-conditions of `shrink`.
         //  -   `new_layout.size()` is smaller than or equal to `old_layout.size()`, as per the pre-conditions of
         //      `shrink`.
-        unsafe { Allocator::shrink(self, handle, old_layout, new_layout).map(|slice| slice.as_non_null_ptr()) }
+        unsafe {
+            Allocator::shrink(self, handle, old_layout, new_layout).map(|slice| (slice.as_non_null_ptr(), slice.len()))
+        }
     }
 
-    fn allocate_zeroed(&self, layout: Layout) -> Result<Self::Handle, AllocError> {
-        Allocator::allocate_zeroed(self, layout).map(|slice| slice.as_non_null_ptr())
+    fn allocate_zeroed(&self, layout: Layout) -> Result<(Self::Handle, usize), AllocError> {
+        Allocator::allocate_zeroed(self, layout).map(|slice| (slice.as_non_null_ptr(), slice.len()))
     }
 
     unsafe fn grow_zeroed(
@@ -69,13 +73,16 @@ where
         handle: Self::Handle,
         old_layout: Layout,
         new_layout: Layout,
-    ) -> Result<Self::Handle, AllocError> {
+    ) -> Result<(Self::Handle, usize), AllocError> {
         //  Safety:
         //  -   `handle` is valid, as per the pre-conditions of `grow_zeroed`.
         //  -   `old_layout` fits, as per the pre-conditions of `grow_zeroed`.
         //  -   `new_layout.size()` is greater than or equal to `old_layout.size()`, as per the pre-conditions of
         //      `grow_zeroed`.
-        unsafe { Allocator::grow_zeroed(self, handle, old_layout, new_layout).map(|slice| slice.as_non_null_ptr()) }
+        unsafe {
+            Allocator::grow_zeroed(self, handle, old_layout, new_layout)
+                .map(|slice| (slice.as_non_null_ptr(), slice.len()))
+        }
     }
 }
 

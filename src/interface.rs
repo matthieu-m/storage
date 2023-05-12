@@ -50,13 +50,14 @@ pub unsafe trait Storage {
 
     /// Attempts to allocate a block of memory.
     ///
-    /// On success, returns a `Handle` to a block of memory meeting the size and alignment guarantees of `Layout`.
+    /// On success, returns a `Handle` to a block of memory meeting the size and alignment guarantees of `Layout` and
+    /// actual size of the block of memory.
     ///
     /// #   Errors
     ///
     /// Returning `Err` indicates that either the memory is exhausted, or `layout` does not meet the storage's size and
     /// alignment constraints.
-    fn allocate(&self, layout: Layout) -> Result<Self::Handle, AllocError>;
+    fn allocate(&self, layout: Layout) -> Result<(Self::Handle, usize), AllocError>;
 
     /// Deallocates the memory referenced by `handle`.
     ///
@@ -98,7 +99,7 @@ pub unsafe trait Storage {
         handle: Self::Handle,
         old_layout: Layout,
         new_layout: Layout,
-    ) -> Result<Self::Handle, AllocError>;
+    ) -> Result<(Self::Handle, usize), AllocError>;
 
     /// Attempts to shrink the block of memory associated with `handle`.
     ///
@@ -122,7 +123,7 @@ pub unsafe trait Storage {
         handle: Self::Handle,
         old_layout: Layout,
         new_layout: Layout,
-    ) -> Result<Self::Handle, AllocError>;
+    ) -> Result<(Self::Handle, usize), AllocError>;
 
     /// Behaves like `allocate`, but also ensures that the associated block of memory is zero-initialized.
     ///
@@ -130,8 +131,8 @@ pub unsafe trait Storage {
     ///
     /// Returning `Err` indicates that either the memory is exhausted, or `layout` does not meet the storage's size and
     /// alignment constraints.
-    fn allocate_zeroed(&self, layout: Layout) -> Result<Self::Handle, AllocError> {
-        let handle = self.allocate(layout)?;
+    fn allocate_zeroed(&self, layout: Layout) -> Result<(Self::Handle, usize), AllocError> {
+        let (handle, size) = self.allocate(layout)?;
 
         //  Safety:
         //  -   `handle` has been allocated by `self`.
@@ -140,11 +141,11 @@ pub unsafe trait Storage {
 
         //  Safety:
         //  -   `pointer` is valid, since `handle` is valid.
-        //  -   `pointer` points to at an area of at least `layout.size()`.
-        //  -   Access to the next `layout.size()` bytes is exclusive.
-        unsafe { ptr::write_bytes(pointer.as_ptr(), 0, layout.size()) };
+        //  -   `pointer` points to at an area of at least `size` bytes.
+        //  -   Access to the next `size` bytes is exclusive.
+        unsafe { ptr::write_bytes(pointer.as_ptr(), 0, size) };
 
-        Ok(handle)
+        Ok((handle, size))
     }
 
     /// Behaves like `grow`, but also ensures that the associated block of memory is zero-initialized.
@@ -157,10 +158,10 @@ pub unsafe trait Storage {
         handle: Self::Handle,
         old_layout: Layout,
         new_layout: Layout,
-    ) -> Result<Self::Handle, AllocError> {
+    ) -> Result<(Self::Handle, usize), AllocError> {
         //  Safety:
         //  -   All pre-conditions of `grow` are pre-conditions of `grow_zeroed`.
-        let handle = unsafe { self.grow(handle, old_layout, new_layout)? };
+        let (handle, new_size) = unsafe { self.grow(handle, old_layout, new_layout)? };
 
         //  Safety:
         //  -   `handle` has been allocated by `self`.
@@ -175,11 +176,11 @@ pub unsafe trait Storage {
 
         //  Safety:
         //  -   `pointer` is valid, since `handle` is valid.
-        //  -   `pointer` points to at an area of at least `new_layout.size() - old_layout.size()`.
-        //  -   Access to the next `new_layout.size() - old_layout.size()` bytes is exclusive.
-        unsafe { ptr::write_bytes(pointer, 0, new_layout.size() - old_layout.size()) };
+        //  -   `pointer` points to at an area of at least `new_size - old_layout.size()`.
+        //  -   Access to the next `new_size - old_layout.size()` bytes is exclusive.
+        unsafe { ptr::write_bytes(pointer, 0, new_size - old_layout.size()) };
 
-        Ok(handle)
+        Ok((handle, new_size))
     }
 }
 
@@ -234,13 +235,13 @@ where
         handle: Self::Handle,
         old_layout: Layout,
         new_layout: Layout,
-    ) -> Result<Self::Handle, AllocError> {
+    ) -> Result<(Self::Handle, usize), AllocError> {
         debug_assert!(
             new_layout.size() >= old_layout.size(),
             "{new_layout:?} must have a greater size than {old_layout:?}"
         );
 
-        let new_handle = self.allocate(new_layout)?;
+        let (new_handle, new_size) = self.allocate(new_layout)?;
 
         //  Safety:
         //  -   `handle` has been allocated by `self`, as per the pre-conditions of `grow`.
@@ -269,7 +270,7 @@ where
         //  -   `old_layout` fits `handle`, as per the pre-conditions of `grow`.
         unsafe { self.deallocate(handle, old_layout) };
 
-        Ok(new_handle)
+        Ok((new_handle, new_size))
     }
 
     default unsafe fn shrink(
@@ -277,13 +278,13 @@ where
         handle: Self::Handle,
         old_layout: Layout,
         new_layout: Layout,
-    ) -> Result<Self::Handle, AllocError> {
+    ) -> Result<(Self::Handle, usize), AllocError> {
         debug_assert!(
             new_layout.size() <= old_layout.size(),
             "{new_layout:?} must have a smaller size than {old_layout:?}"
         );
 
-        let new_handle = self.allocate(new_layout)?;
+        let (new_handle, new_size) = self.allocate(new_layout)?;
 
         //  Safety:
         //  -   `handle` has been allocated by `self`, as per the pre-conditions of `shrink`.
@@ -299,10 +300,10 @@ where
         //  Safety:
         //  -   `current_ptr` is valid for reads, as `handle` is valid.
         //  -   `new_ptr` is valid for writes, as `handle` is valid _and_ exclusive access is guaranteed.
-        //  -   `new_ptr` is valid `new_layout.size()` bytes, as it was allocated with `new_layout`.
-        //  -   `current_ptr` is valid for `new_layout.size()` bytes, as it is smaller than or equal to
+        //  -   `new_ptr` is valid `new_size` bytes, as it was allocated with `new_layout`.
+        //  -   `current_ptr` is valid for `new_size` bytes, as it is smaller than or equal to
         //      `old_layout.size()` as per the pre-conditions of `shrink`.
-        unsafe { ptr::copy_nonoverlapping(current_ptr.as_ptr(), new_ptr.as_ptr(), new_layout.size()) };
+        unsafe { ptr::copy_nonoverlapping(current_ptr.as_ptr(), new_ptr.as_ptr(), new_size) };
 
         //  Safety:
         //  -   `handle` has been allocated by `self`, as per the pre-conditions of `shrink`.
@@ -311,7 +312,7 @@ where
         //  -   `old_layout` fits `handle`, as per the pre-conditions of `shrink`.
         unsafe { self.deallocate(handle, old_layout) };
 
-        Ok(new_handle)
+        Ok((new_handle, new_size))
     }
 
     default unsafe fn grow_zeroed(
@@ -319,13 +320,13 @@ where
         handle: Self::Handle,
         old_layout: Layout,
         new_layout: Layout,
-    ) -> Result<Self::Handle, AllocError> {
+    ) -> Result<(Self::Handle, usize), AllocError> {
         debug_assert!(
             new_layout.size() >= old_layout.size(),
             "{new_layout:?} must have a greater size than {old_layout:?}"
         );
 
-        let new_handle = self.allocate_zeroed(new_layout)?;
+        let (new_handle, new_size) = self.allocate_zeroed(new_layout)?;
 
         //  Safety:
         //  -   `handle` has been allocated by `self`, as per the pre-conditions of `grow`.
@@ -354,6 +355,6 @@ where
         //  -   `old_layout` fits `handle`, as per the pre-conditions of `grow`.
         unsafe { self.deallocate(handle, old_layout) };
 
-        Ok(new_handle)
+        Ok((new_handle, new_size))
     }
 }

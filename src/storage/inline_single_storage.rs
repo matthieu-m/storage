@@ -6,7 +6,7 @@ use core::{
     alloc::{AllocError, Layout},
     cell::UnsafeCell,
     fmt,
-    mem::MaybeUninit,
+    mem::{self, MaybeUninit},
     ptr::{self, NonNull},
 };
 
@@ -28,10 +28,10 @@ unsafe impl<T> Storage for InlineSingleStorage<T> {
 
     fn dangling() -> Self::Handle {}
 
-    fn allocate(&self, layout: Layout) -> Result<Self::Handle, AllocError> {
+    fn allocate(&self, layout: Layout) -> Result<(Self::Handle, usize), AllocError> {
         Self::validate_layout(layout)?;
 
-        Ok(())
+        Ok(((), mem::size_of::<T>()))
     }
 
     unsafe fn deallocate(&self, _handle: Self::Handle, _layout: Layout) {}
@@ -49,7 +49,7 @@ unsafe impl<T> Storage for InlineSingleStorage<T> {
         _handle: Self::Handle,
         _old_layout: Layout,
         new_layout: Layout,
-    ) -> Result<Self::Handle, AllocError> {
+    ) -> Result<(Self::Handle, usize), AllocError> {
         debug_assert!(
             new_layout.size() >= _old_layout.size(),
             "{new_layout:?} must have a greater size than {_old_layout:?}"
@@ -57,7 +57,7 @@ unsafe impl<T> Storage for InlineSingleStorage<T> {
 
         Self::validate_layout(new_layout)?;
 
-        Ok(())
+        Ok(((), mem::size_of::<T>()))
     }
 
     unsafe fn shrink(
@@ -65,27 +65,27 @@ unsafe impl<T> Storage for InlineSingleStorage<T> {
         _handle: Self::Handle,
         _old_layout: Layout,
         _new_layout: Layout,
-    ) -> Result<Self::Handle, AllocError> {
+    ) -> Result<(Self::Handle, usize), AllocError> {
         debug_assert!(
             _new_layout.size() >= _old_layout.size(),
             "{_new_layout:?} must have a smaller size than {_old_layout:?}"
         );
 
-        Ok(())
+        Ok(((), mem::size_of::<T>()))
     }
 
-    fn allocate_zeroed(&self, layout: Layout) -> Result<Self::Handle, AllocError> {
+    fn allocate_zeroed(&self, layout: Layout) -> Result<(Self::Handle, usize), AllocError> {
         Self::validate_layout(layout)?;
 
         let pointer = self.0.get() as *mut u8;
 
         //  Safety:
         //  -   `pointer` is valid, since `self` is valid.
-        //  -   `pointer` points to at an area of at least `layout.size()`.
-        //  -   Access to the next `layout.size()` bytes is exclusive.
-        unsafe { ptr::write_bytes(pointer, 0, layout.size()) };
+        //  -   `pointer` points to at an area of at least `mem::size_of::<T>()`.
+        //  -   Access to the next `mem::size_of::<T>()` bytes is exclusive.
+        unsafe { ptr::write_bytes(pointer, 0, mem::size_of::<T>()) };
 
-        Ok(())
+        Ok(((), mem::size_of::<T>()))
     }
 
     unsafe fn grow_zeroed(
@@ -93,7 +93,7 @@ unsafe impl<T> Storage for InlineSingleStorage<T> {
         _handle: Self::Handle,
         old_layout: Layout,
         new_layout: Layout,
-    ) -> Result<Self::Handle, AllocError> {
+    ) -> Result<(Self::Handle, usize), AllocError> {
         debug_assert!(
             new_layout.size() >= old_layout.size(),
             "{new_layout:?} must have a greater size than {old_layout:?}"
@@ -111,11 +111,11 @@ unsafe impl<T> Storage for InlineSingleStorage<T> {
 
         //  Safety:
         //  -   `pointer` is valid, since `self` is valid.
-        //  -   `pointer` points to at an area of at least `new_layout.size() - old_layout.size()`.
-        //  -   Access to the next `new_layout.size() - old_layout.size()` bytes is exclusive.
-        unsafe { ptr::write_bytes(pointer, 0, new_layout.size() - old_layout.size()) };
+        //  -   `pointer` points to at an area of at least `mem::size_of::<T>() - old_layout.size()`.
+        //  -   Access to the next `mem::size_of::<T>() - old_layout.size()` bytes is exclusive.
+        unsafe { ptr::write_bytes(pointer, 0, mem::size_of::<T>() - old_layout.size()) };
 
-        Ok(())
+        Ok(((), mem::size_of::<T>()))
     }
 }
 

@@ -452,7 +452,7 @@ where
     {
         let (layout, offset) = Self::layout(number_links);
 
-        let handle = storage.allocate(layout).expect("Allocation to succeed.");
+        let (handle, _) = storage.allocate(layout).expect("Allocation to succeed.");
 
         //  Safety:
         //  -   `handle` was allocated by `storage`, and is still valid.
@@ -526,7 +526,7 @@ where
         //  -   No other reference to its block of memory is active.
         //  -   `old_layout` fits the block of memory associated with `handle`.
         //  -   `new_layout` is greater than `old_layout`.
-        let handle = unsafe {
+        let (handle, _) = unsafe {
             storage
                 .grow(handle.to_raw_parts().0, old_layout, new_layout)
                 .expect("Allocation to succeed")

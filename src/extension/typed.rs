@@ -42,7 +42,7 @@ impl<T, H: Copy> TypedHandle<T, H> {
     where
         S: Storage<Handle = H>,
     {
-        let handle = storage.allocate(Layout::new::<T>())?;
+        let (handle, _) = storage.allocate(Layout::new::<T>())?;
 
         //  Safety:
         //  -   `handle` was just allocated by `storage`.
@@ -70,7 +70,7 @@ impl<T, H: Copy> TypedHandle<T, H> {
     where
         S: Storage<Handle = H>,
     {
-        let handle = storage.allocate(Layout::new::<T>())?;
+        let (handle, _) = storage.allocate(Layout::new::<T>())?;
         let metadata = TypedMetadata::default();
 
         Ok(Self { handle, metadata })
@@ -86,7 +86,7 @@ impl<T, H: Copy> TypedHandle<T, H> {
     where
         S: Storage<Handle = H>,
     {
-        let handle = storage.allocate_zeroed(Layout::new::<T>())?;
+        let (handle, _) = storage.allocate_zeroed(Layout::new::<T>())?;
         let metadata = TypedMetadata::default();
 
         Ok(Self { handle, metadata })
@@ -266,7 +266,9 @@ impl<T, H: Copy> TypedHandle<[T], H> {
         //  -   `self.handle` is still valid, as per pre-conditions.
         //  -   `old_layout` fits the block of memory associated to `self.handle`, by construction.
         //  -   `new_layout`'s size is greater than or equal to the size of `old_layout`, as per pre-conditions.
-        self.handle = unsafe { storage.grow(self.handle, old_layout, new_layout)? };
+        let (handle, _) = unsafe { storage.grow(self.handle, old_layout, new_layout)? };
+
+        self.handle = handle;
 
         self.metadata = TypedMetadata::new(new_size);
 
@@ -297,7 +299,9 @@ impl<T, H: Copy> TypedHandle<[T], H> {
         //  -   `self.handle` is still valid, as per pre-conditions.
         //  -   `old_layout` fits the block of memory associated to `self.handle`, by construction.
         //  -   `new_layout`'s size is greater than or equal to the size of `old_layout`, as per pre-conditions.
-        self.handle = unsafe { storage.grow_zeroed(self.handle, old_layout, new_layout)? };
+        let (handle, _) = unsafe { storage.grow_zeroed(self.handle, old_layout, new_layout)? };
+
+        self.handle = handle;
 
         self.metadata = TypedMetadata::new(new_size);
 
@@ -327,7 +331,9 @@ impl<T, H: Copy> TypedHandle<[T], H> {
         //  -   `self.handle` is still valid, as per pre-conditions.
         //  -   `old_layout` fits the block of memory associated to `self.handle`, by construction.
         //  -   `new_layout`'s size is less than or equal to the size of `old_layout`, as per pre-conditions.
-        self.handle = unsafe { storage.shrink(self.handle, old_layout, new_layout)? };
+        let (handle, _) = unsafe { storage.shrink(self.handle, old_layout, new_layout)? };
+
+        self.handle = handle;
 
         self.metadata = TypedMetadata::new(new_size);
 

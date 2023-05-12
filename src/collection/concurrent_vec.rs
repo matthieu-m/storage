@@ -324,7 +324,7 @@ impl<T, S: Storage> Store<T, S> {
     fn with_storage(capacity: usize, storage: S) -> Self {
         let layout = Layout::array::<T>(capacity).expect("Small enough capacity");
 
-        let handle = storage.allocate(layout).expect("Successful allocation");
+        let (handle, _) = storage.allocate(layout).expect("Successful allocation");
 
         //  Safety:
         //  -   `handle` is associated to a block of memory which fits `[T; capacity]`.
