@@ -108,6 +108,9 @@ impl<T: ?Sized, H: Copy> UniqueHandle<T, H> {
     /// -   `self` must be associated to a block of memory containing a valid instance of `T`.
     /// -   The reference is only guaranteed to be valid as long as `self` is valid. Most notably, unless `storage`
     ///     implements `MultipleStorage` allocating from `storage` will invalidate it.
+    /// -   The reference is only guaranteed to be valid as long as pointers resolved from `self` are not invalidated.
+    ///     Most notably, unless `storage` implements `StableStorage`, any method call on `storage`, including other
+    ///     `resolve` calls, may invalidate the reference.
     #[inline(always)]
     pub unsafe fn resolve<'a, S>(&'a self, storage: &'a S) -> &'a T
     where
@@ -134,6 +137,9 @@ impl<T: ?Sized, H: Copy> UniqueHandle<T, H> {
     /// -   `self` must be associated to a block of memory containing a valid instance of `T`.
     /// -   The reference is only guaranteed to be valid as long as `self` is valid. Most notably, unless `storage`
     ///     implements `MultipleStorage` allocating from `storage` will invalidate it.
+    /// -   The reference is only guaranteed to be valid as long as pointers resolved from `self` are not invalidated.
+    ///     Most notably, unless `storage` implements `StableStorage`, any method call on `storage`, including other
+    ///     `resolve` calls, may invalidate the reference.
     #[inline(always)]
     pub unsafe fn resolve_mut<'a, S>(&'a mut self, storage: &'a S) -> &'a mut T
     where
@@ -157,8 +163,11 @@ impl<T: ?Sized, H: Copy> UniqueHandle<T, H> {
     ///
     /// -   `self` must have been allocated by `storage`.
     /// -   `self` must still be valid.
-    /// -   The pointer is only guaranteed to be valid as long as `self` is valid and `storage` is not moved. Most
-    ///     notably, unless `storage` implements `MultipleStorage` allocating from `storage` will invalidate it.
+    /// -   The pointer is only guaranteed to be valid as long as `self` is valid. Most notably, unless `storage`
+    ///     implements `MultipleStorage` allocating from `storage` will invalidate it.
+    /// -   The pointer is only guaranteed to be valid as long as pointers resolved from `self` are not invalidated.
+    ///     Most notably, unless `storage` implements `StableStorage`, any method call on `storage`, including other
+    ///     `resolve` calls, may invalidate the pointer.
     #[inline(always)]
     pub unsafe fn resolve_raw<S>(&self, storage: &S) -> NonNull<T>
     where
