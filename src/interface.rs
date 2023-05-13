@@ -48,27 +48,10 @@ pub unsafe trait Storage {
     /// whether a given handle is dangling, valid, or used to be valid but was invalidated.
     fn dangling() -> Self::Handle;
 
-    /// Attempts to allocate a block of memory.
+    /// Resolves the `handle` into a pointer to the first byte of the associated block of memory.
     ///
-    /// On success, returns a `Handle` to a block of memory meeting the size and alignment guarantees of `Layout` and
-    /// actual size of the block of memory.
-    ///
-    /// #   Errors
-    ///
-    /// Returning `Err` indicates that either the memory is exhausted, or `layout` does not meet the storage's size and
-    /// alignment constraints.
-    fn allocate(&self, layout: Layout) -> Result<(Self::Handle, usize), AllocError>;
-
-    /// Deallocates the memory referenced by `handle`.
-    ///
-    /// #   Safety
-    ///
-    /// -   `handle` must have been allocated by `self`.
-    /// -   `handle` must still be valid.
-    /// -   `layout` must fit the associated block of memory.
-    unsafe fn deallocate(&self, handle: Self::Handle, layout: Layout);
-
-    /// Resolves the `handle` into a pointer to the first byte of allocated memory.
+    /// Unless `self` implements `StableStorage`, all previously resolved pointers from different handles may be
+    /// invalidated.
     ///
     /// #   Safety
     ///
@@ -77,11 +60,48 @@ pub unsafe trait Storage {
     /// -   The block of memory associated to the handle is only valid for as long as the `handle` is valid itself.
     unsafe fn resolve(&self, handle: Self::Handle) -> NonNull<u8>;
 
+    /// Attempts to allocate a block of memory.
+    ///
+    /// On success, returns a `Handle` to a block of memory meeting the size and alignment guarantees of `Layout` and
+    /// actual size of the block of memory.
+    ///
+    /// Unless `self` implements `MultipleStorage`, all previously allocated handles may be invalidated.
+    ///
+    /// Unless `self` implements `StableStorage`, all previously resolved pointers may be invalidated.
+    ///
+    /// #   Errors
+    ///
+    /// Returning `Err` indicates that either the memory is exhausted, or the storage cannot satisfy `layout`
+    /// constraints.
+    fn allocate(&self, layout: Layout) -> Result<(Self::Handle, usize), AllocError>;
+
+    /// Deallocates the memory referenced by `handle`.
+    ///
+    /// This invalidates `handle` and all its copies, as well as all pointers resolved from `handle` or any of its
+    /// copies.
+    ///
+    /// Unless `self` implements `MultipleStorage`, all previously allocated handles may be invalidated.
+    ///
+    /// Unless `self` implements `StableStorage`, all previously resolved pointers may be invalidated.
+    ///
+    /// #   Safety
+    ///
+    /// -   `handle` must have been allocated by `self`.
+    /// -   `handle` must still be valid.
+    /// -   `layout` must fit the associated block of memory.
+    unsafe fn deallocate(&self, handle: Self::Handle, layout: Layout);
+
     /// Attempts to extend the block of memory associated with `handle`.
     ///
-    /// Returns a new `Self::Handle` associated with the extended block of memory.
+    /// On success, returns a new `Self::Handle` associated with the extended block of memory, and may invalidate
+    /// `handle` and all its copies, as well as all pointers resolved from `handle` or any of its copies.
     ///
-    /// If this returns `Ok`, `handle` is invalidated; if this returns `Err`, `handle` is still valid.
+    /// On failure, `handle` and all its copies are still valid, though any pointer resolved from `handle` or any of
+    /// its copies may have been invalidated.
+    ///
+    /// Unless `self` implements `MultipleStorage`, all previously allocated handles may be invalidated.
+    ///
+    /// Unless `self` implements `StableStorage`, all previously resolved pointers may be invalidated.
     ///
     /// #    Safety
     ///
@@ -92,8 +112,8 @@ pub unsafe trait Storage {
     ///
     /// #   Errors
     ///
-    /// Returning `Err` indicates that either the memory is exhausted, or `new_layout` does not meet the storage's size
-    /// and alignment constraints.
+    /// Returning `Err` indicates that either the memory is exhausted, or the storage cannot satisfy `new_layout`
+    /// constraints.
     unsafe fn grow(
         &self,
         handle: Self::Handle,
@@ -103,9 +123,15 @@ pub unsafe trait Storage {
 
     /// Attempts to shrink the block of memory associated with `handle`.
     ///
-    /// Returns a new `Self::Handle` associated with the extended block of memory.
+    /// On success, returns a new `Self::Handle` associated with the extended block of memory, and may invalidate
+    /// `handle` and all its copies, as well as all pointers resolved from `handle` or any of its copies.
     ///
-    /// If this returns `Ok`, `handle` is invalidated; if this returns `Err`, `handle` is still valid.
+    /// On failure, `handle` and all its copies are still valid, though any pointer resolved from `handle` or any of
+    /// its copies may have been invalidated.
+    ///
+    /// Unless `self` implements `MultipleStorage`, all previously allocated handles may be invalidated.
+    ///
+    /// Unless `self` implements `StableStorage`, all previously resolved pointers may be invalidated.
     ///
     /// #    Safety
     ///
@@ -116,8 +142,8 @@ pub unsafe trait Storage {
     ///
     /// #   Errors
     ///
-    /// Returning `Err` indicates that either the memory is exhausted, or `new_layout` does not meet the storage's size
-    /// and alignment constraints.
+    /// Returning `Err` indicates that either the memory is exhausted, or the storage cannot satisfy `new_layout`
+    /// constraints.
     unsafe fn shrink(
         &self,
         handle: Self::Handle,
@@ -129,8 +155,8 @@ pub unsafe trait Storage {
     ///
     /// #   Errors
     ///
-    /// Returning `Err` indicates that either the memory is exhausted, or `layout` does not meet the storage's size and
-    /// alignment constraints.
+    /// Returning `Err` indicates that either the memory is exhausted, or the storage cannot satisfy `new_layout`
+    /// constraints.
     fn allocate_zeroed(&self, layout: Layout) -> Result<(Self::Handle, usize), AllocError> {
         let (handle, size) = self.allocate(layout)?;
 
@@ -153,6 +179,11 @@ pub unsafe trait Storage {
     /// #   Safety
     ///
     /// As per `grow`.
+    ///
+    /// #   Errors
+    ///
+    /// Returning `Err` indicates that either the memory is exhausted, or the storage cannot satisfy `new_layout`
+    /// constraints.
     unsafe fn grow_zeroed(
         &self,
         handle: Self::Handle,
@@ -176,7 +207,7 @@ pub unsafe trait Storage {
 
         //  Safety:
         //  -   `pointer` is valid, since `handle` is valid.
-        //  -   `pointer` points to at an area of at least `new_size - old_layout.size()`.
+        //  -   `pointer` points to an area of at least `new_size - old_layout.size()`.
         //  -   Access to the next `new_size - old_layout.size()` bytes is exclusive.
         unsafe { ptr::write_bytes(pointer, 0, new_size - old_layout.size()) };
 
@@ -202,19 +233,19 @@ pub unsafe trait MultipleStorage: Storage {}
 ///
 /// If the blocks of memory should be stable in memory across moves as well, then `PinningStorage` is required.
 ///
+/// It is common but not required for implementers of this trait to also implement `MultipleStorage`.
+///
 /// #   Safety
 ///
 /// Implementers of this trait must guarantee that a handle always resolve to the same block of memory for as long as
 /// it is valid and the instance of `Storage` has not moved.
-///
-/// It is common but not required for implementers of this trait to also implement `MultipleStorage`.
 pub unsafe trait StableStorage: Storage {}
 
 /// A refinement of `Storage` which guarantees that the blocks of memory are pinned in memory.
 ///
 /// #   Safety
 ///
-/// Implementers of this trait must guarantee that handle always resolve to the same block of memory for as long as
+/// Implementers of this trait must guarantee that a handle always resolve to the same block of memory for as long as
 /// it is valid.
 pub unsafe trait PinningStorage: StableStorage {}
 

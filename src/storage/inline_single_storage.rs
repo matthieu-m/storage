@@ -119,6 +119,10 @@ unsafe impl<T> Storage for InlineSingleStorage<T> {
     }
 }
 
+//  Safety:
+//  -   `self.resolve(handle)` always returns the same address, as long as `self` doesn't move.
+unsafe impl<T> StableStorage for InlineSingleStorage<T> {}
+
 impl<T> fmt::Debug for InlineSingleStorage<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         let layout = Layout::new::<T>();
