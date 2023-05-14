@@ -305,7 +305,7 @@ impl<T> Default for InlineSingleStorage<T> {
 unsafe impl<T> Storage for InlineSingleStorage<T> {
     type Handle = ();
 
-    fn dangling() -> Self::Handle {}
+    fn dangling(&self) -> Self::Handle {}
 
     fn allocate(&self, layout: Layout) -> Result<(Self::Handle, usize), AllocError> {
         Self::validate_layout(layout)?;
@@ -678,6 +678,20 @@ at the storage level. The `UniqueHandle` possible future extension, which is non
 This solution is more flexible, and more minimalist, generally a good sign with regard to API design.
 
 
+##  Argument-less dangling method
+
+A previous version of the companion repository used an argument-less `Storage::dangling` method.
+
+The main advantage is that no instance of `Storage` is then necessary to create an associated dangling handle. The
+somewhat hidden cost, however, is that `Storage` is then no longer dyn-safe.
+
+An intermediate solution to restore dyn-safety would be a where clause `Self: Sized`, but while this would indeed make
+`Storage` dyn-safe, it would still result in only providing partial functionality. This seems clearly undesirable.
+
+In the absence of strong usecase for creating dangling handles in the absence of an instance of `Storage`, it seems
+preferable to have `Storage::dangling` take `&self` so that `dyn Storage` be fully functional.
+
+
 ##  Adapter vs Blanket Implementation
 
 A previous version of the companion repository used an `AllocatorStorage` adapter struct, instead of a blanket
@@ -797,6 +811,23 @@ kept to a minimum, and users can always specify additional requirements if they 
 -   `Eq`, `Hash`, and `Ord` are obvious candidates, yet they are unused in the current proposal:
     -   Implementing `Eq`, `Hash`, or `Ord` for a collection does not require the handles to implement any of them.
 -   `Send` and `Sync` should definitely be kept out. `Allocator`-based storages could not use `NonNull<u8>` otherwise.
+
+
+##  (Minor) Should `Storage::dangling` be `const`?
+
+While const trait associated functions are still a maybe, it seems reasonable to ask ourselves whether some of the
+associated functions of `Storage` should be `const` if it were possible.
+
+There doesn't seem to be a practical advantage in doing so for most of the associated functions of `Storage`: if
+allocation and deallocation need be executed in a const context, then a `const Storage` is necessary, and there's no
+need to single out any of those.
+
+There is, however, a very practical advantage in making `Storage::dangling` const: it allows initialized an empty
+collection in a const context even with a non-const `Storage` implementation.
+
+The one downside is that this would preclude some implementations of `dangling` which would rely on global state, or
+I/O. @CAD97 notably mentioned the possibility of using randomization for debugging or hardening purposes. Still, it
+would still be possible to initialize the instance of `Storage` with a random seed, then use a PRNG within `dangling`.
 
 
 #   Future Possibilities
