@@ -782,8 +782,8 @@ And thus in early 2023 I implemented a 3rd revision of the API, a revision I am 
     than multiple traits each providing related but subtly different functionalities and guarantees.
 
 The ability to develop 3rd-party extensions for increased safety also confirms, to me, that @CAD97 was on the right
-track when he removed the strong typing, and on the wrong track when he attempted to bake in borrow-checking: if it's
-easy enough to add safety, then it seems better for the "core" API to be minimalist instead.
+track when they removed the strong typing, and on the wrong track when they attempted to bake in borrow-checking: if
+it's easy enough to add safety, then it seems better for the "core" API to be minimalist instead.
 
 
 #   Unresolved Questions
