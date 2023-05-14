@@ -16,11 +16,11 @@ pub struct UniqueHandle<T: ?Sized, H>(TypedHandle<T, H>);
 impl<T, H: Copy> UniqueHandle<T, H> {
     /// Creates a dangling handle.
     #[inline(always)]
-    pub fn dangling<S>() -> Self
+    pub fn dangling<S>(storage: &S) -> Self
     where
         S: Storage<Handle = H>,
     {
-        Self(TypedHandle::dangling::<S>())
+        Self(TypedHandle::dangling(storage))
     }
 
     /// Creates a new handle, pointing to a `T`.

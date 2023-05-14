@@ -39,7 +39,7 @@ impl<K, V, S: Storage> SkipList<K, V, S> {
     /// Creates a new, empty, instance with the given storage.
     pub fn with_storage(storage: S) -> Self {
         let length = 0;
-        let head = TypedHandle::dangling::<S>();
+        let head = TypedHandle::dangling(&storage);
         //  0 is not particularly good; on the allocation of the first node it'll be switched with its address instead.
         let prng = Rand32::new(0);
 
@@ -487,7 +487,7 @@ where
             //  Safety:
             //  -   `link` is valid for writes.
             //  -   `link` is properly aligned.
-            unsafe { ptr::write(link, NodeHandle::dangling::<S>()) };
+            unsafe { ptr::write(link, NodeHandle::dangling(storage)) };
         }
 
         //  Safety:

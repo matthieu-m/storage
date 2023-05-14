@@ -10,7 +10,7 @@ use core::{
     ptr::{self, NonNull},
 };
 
-use crate::interface::Storage;
+use crate::interface::{StableStorage, Storage};
 
 /// An implementation of `Storage` providing a single, inline, block of memory.
 ///
@@ -26,7 +26,7 @@ impl<T> Default for InlineSingleStorage<T> {
 unsafe impl<T> Storage for InlineSingleStorage<T> {
     type Handle = ();
 
-    fn dangling() -> Self::Handle {}
+    fn dangling(&self) -> Self::Handle {}
 
     fn allocate(&self, layout: Layout) -> Result<(Self::Handle, usize), AllocError> {
         Self::validate_layout(layout)?;

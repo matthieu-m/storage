@@ -26,6 +26,7 @@ use core::{
 ///
 /// Pointer Invalidation:
 ///
+/// -   All pointers resolved by an instance of `Storage` may be invalidated when dropping this instance of `Storage`.
 /// -   All pointers resolved by an instance of `Storage` may be invalidated when moving this instance of `Storage`.
 ///     Pointers are only guaranteed to remain valid across moves for instances also implementing `PinningStorage`.
 /// -   All pointers resolved by an instance of `Storage` may be invalidated when calling `Storage::allocate`,
@@ -46,7 +47,7 @@ pub unsafe trait Storage {
     /// A dangling handle is never valid, and thus cannot be deallocated, resolved, grown, shrunk, etc... Furthermore
     /// there is no explicit way to distinguish whether a handle is dangling, or not. It is up to the user to remember
     /// whether a given handle is dangling, valid, or used to be valid but was invalidated.
-    fn dangling() -> Self::Handle;
+    fn dangling(&self) -> Self::Handle;
 
     /// Resolves the `handle` into a pointer to the first byte of the associated block of memory.
     ///
@@ -57,7 +58,8 @@ pub unsafe trait Storage {
     ///
     /// -   `handle` must have been allocated by `self`.
     /// -   `handle` must still be valid.
-    /// -   The block of memory associated to the handle is only valid for as long as the `handle` is valid itself.
+    /// -   The resulting pointer is only valid for as long as the `handle` is valid itself, and may be invalidated
+    ///     sooner, see [Pointer Invalidation].
     unsafe fn resolve(&self, handle: Self::Handle) -> NonNull<u8>;
 
     /// Attempts to allocate a block of memory.

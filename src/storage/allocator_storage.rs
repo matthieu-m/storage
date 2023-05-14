@@ -13,7 +13,7 @@ where
 {
     type Handle = NonNull<u8>;
 
-    fn dangling() -> Self::Handle {
+    fn dangling(&self) -> Self::Handle {
         NonNull::dangling()
     }
 

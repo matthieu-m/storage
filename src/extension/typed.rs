@@ -24,11 +24,11 @@ pub struct TypedHandle<T: ?Sized, H> {
 impl<T, H: Copy> TypedHandle<T, H> {
     /// Creates a dangling handle.
     #[inline(always)]
-    pub fn dangling<S>() -> Self
+    pub fn dangling<S>(storage: &S) -> Self
     where
         S: Storage<Handle = H>,
     {
-        let handle = S::dangling();
+        let handle = storage.dangling();
         let metadata = TypedMetadata::default();
 
         Self { handle, metadata }
