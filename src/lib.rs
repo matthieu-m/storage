@@ -1,11 +1,11 @@
-//! Storage API, for greater flexibility.
+//! Store API, for greater flexibility.
 //!
 //! This project aims at exploring the possibility of a different API for allocation, providing greater flexibility
 //! than `Allocator`.
 //!
 //! This project does NOT aim at displacing `Allocator`, but rather at providing a lower-level abstraction layer for
 //! when greater flexibility is required. Zero-Cost compatibility with `Allocator` is desired, so that collections can
-//! be implemented in terms of `Storage`, but used with an `Allocator` easily.
+//! be implemented in terms of `Store`, but used with an `Allocator` easily.
 
 #![cfg_attr(not(test), no_std)]
 //  Features
@@ -28,4 +28,4 @@
 pub mod collection;
 pub mod extension;
 pub mod interface;
-pub mod storage;
+pub mod store;

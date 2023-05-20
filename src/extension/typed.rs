@@ -9,12 +9,12 @@ use core::{
 #[cfg(feature = "coercible-metadata")]
 use core::ops::CoerceUnsized;
 
-use crate::{extension::typed_metadata::TypedMetadata, interface::Storage};
+use crate::{extension::typed_metadata::TypedMetadata, interface::Store};
 
 /// Arbitrary typed handle, for type safety, and coercion.
 ///
 /// A typed handle may be invalid, either because it was created dangling, or because it became invalid following an
-/// operation on the storage that allocated it. It is the responsibility of the user to ensure that the typed handle
+/// operation on the store that allocated it. It is the responsibility of the user to ensure that the typed handle
 /// is valid when necessary.
 pub struct TypedHandle<T: ?Sized, H> {
     handle: H,
@@ -24,11 +24,11 @@ pub struct TypedHandle<T: ?Sized, H> {
 impl<T, H: Copy> TypedHandle<T, H> {
     /// Creates a dangling handle.
     #[inline(always)]
-    pub fn dangling<S>(storage: &S) -> Self
+    pub fn dangling<S>(store: &S) -> Self
     where
-        S: Storage<Handle = H>,
+        S: Store<Handle = H>,
     {
-        let handle = storage.dangling();
+        let handle = store.dangling();
         let metadata = TypedMetadata::default();
 
         Self { handle, metadata }
@@ -36,18 +36,18 @@ impl<T, H: Copy> TypedHandle<T, H> {
 
     /// Creates a new handle, pointing to a `T`.
     ///
-    /// Unless `storage` implements `MultipleStorage`, this invalidates all existing handles of `storage`.
+    /// Unless `store` implements `MultipleStore`, this invalidates all existing handles of `store`.
     #[inline(always)]
-    pub fn new<S>(value: T, storage: &S) -> Result<Self, AllocError>
+    pub fn new<S>(value: T, store: &S) -> Result<Self, AllocError>
     where
-        S: Storage<Handle = H>,
+        S: Store<Handle = H>,
     {
-        let (handle, _) = storage.allocate(Layout::new::<T>())?;
+        let (handle, _) = store.allocate(Layout::new::<T>())?;
 
         //  Safety:
-        //  -   `handle` was just allocated by `storage`.
-        //  -   `handle` is still valid, as no other operation occurred on `storage`.
-        let pointer = unsafe { storage.resolve(handle) };
+        //  -   `handle` was just allocated by `store`.
+        //  -   `handle` is still valid, as no other operation occurred on `store`.
+        let pointer = unsafe { store.resolve(handle) };
 
         //  Safety:
         //  -   `pointer` points to writeable memory area.
@@ -64,13 +64,13 @@ impl<T, H: Copy> TypedHandle<T, H> {
     ///
     /// The allocated memory is left uninitialized.
     ///
-    /// Unless `storage` implements `MultipleStorage`, this invalidates all existing handles of `storage`.
+    /// Unless `store` implements `MultipleStore`, this invalidates all existing handles of `store`.
     #[inline(always)]
-    pub fn allocate<S>(storage: &S) -> Result<Self, AllocError>
+    pub fn allocate<S>(store: &S) -> Result<Self, AllocError>
     where
-        S: Storage<Handle = H>,
+        S: Store<Handle = H>,
     {
-        let (handle, _) = storage.allocate(Layout::new::<T>())?;
+        let (handle, _) = store.allocate(Layout::new::<T>())?;
         let metadata = TypedMetadata::default();
 
         Ok(Self { handle, metadata })
@@ -80,13 +80,13 @@ impl<T, H: Copy> TypedHandle<T, H> {
     ///
     /// The allocated memory is zeroed out.
     ///
-    /// Unless `storage` implements `MultipleStorage`, this invalidates all existing handles of `storage`.
+    /// Unless `store` implements `MultipleStore`, this invalidates all existing handles of `store`.
     #[inline(always)]
-    pub fn allocate_zeroed<S>(storage: &S) -> Result<Self, AllocError>
+    pub fn allocate_zeroed<S>(store: &S) -> Result<Self, AllocError>
     where
-        S: Storage<Handle = H>,
+        S: Store<Handle = H>,
     {
-        let (handle, _) = storage.allocate_zeroed(Layout::new::<T>())?;
+        let (handle, _) = store.allocate_zeroed(Layout::new::<T>())?;
         let metadata = TypedMetadata::default();
 
         Ok(Self { handle, metadata })
@@ -114,57 +114,57 @@ impl<T: ?Sized, H: Copy> TypedHandle<T, H> {
     ///
     /// #   Safety
     ///
-    /// -   `self` must have been allocated by `storage`.
+    /// -   `self` must have been allocated by `store`.
     /// -   `self` must still be valid.
     /// -   `self` is invalidated alongside any copy of it.
     #[inline(always)]
-    pub unsafe fn deallocate<S>(&self, storage: &S)
+    pub unsafe fn deallocate<S>(&self, store: &S)
     where
-        S: Storage<Handle = H>,
+        S: Store<Handle = H>,
     {
         //  Safety:
-        //  -   `self.handle` was allocated by `storage`, as per pre-conditions.
+        //  -   `self.handle` was allocated by `store`, as per pre-conditions.
         //  -   `self.handle` is still valid, as per pre-conditions.
-        let pointer = unsafe { self.resolve_raw(storage) };
+        let pointer = unsafe { self.resolve_raw(store) };
 
         //  Safety:
         //  -   `pointer` has valid metadata for `T`.
         let layout = unsafe { Layout::for_value_raw(pointer.as_ptr() as *const T) };
 
         //  Safety:
-        //  -   `self.handle` was allocated by `storage`, as per pre-conditions.
+        //  -   `self.handle` was allocated by `store`, as per pre-conditions.
         //  -   `self.handle` is still valid, as per pre-conditions.
         //  -   `layout` fits the block of memory associated with `self.handle`.
-        unsafe { storage.deallocate(self.handle, layout) };
+        unsafe { store.deallocate(self.handle, layout) };
     }
 
     /// Resolves the handle to a reference.
     ///
     /// #   Safety
     ///
-    /// -   `self` must have been allocated by `storage`.
+    /// -   `self` must have been allocated by `store`.
     /// -   `self` must still be valid.
     /// -   `self` must be associated to a block of memory containing a valid instance of `T`.
     /// -   No access through a mutable reference to this instance of `T` must overlap with accesses through the result.
-    /// -   The reference is only guaranteed to be valid as long as `self` is valid. Most notably, unless `storage`
-    ///     implements `MultipleStorage` allocating from `storage` will invalidate it.
+    /// -   The reference is only guaranteed to be valid as long as `self` is valid. Most notably, unless `store`
+    ///     implements `MultipleStore` allocating from `store` will invalidate it.
     /// -   The reference is only guaranteed to be valid as long as pointers resolved from `self` are not invalidated.
-    ///     Most notably, unless `storage` implements `StableStorage`, any method call on `storage`, including other
+    ///     Most notably, unless `store` implements `StableStore`, any method call on `store`, including other
     ///     `resolve` calls, may invalidate the reference.
     #[inline(always)]
-    pub unsafe fn resolve<'a, S>(&self, storage: &'a S) -> &'a T
+    pub unsafe fn resolve<'a, S>(&self, store: &'a S) -> &'a T
     where
-        S: Storage<Handle = H>,
+        S: Store<Handle = H>,
     {
         //  Safety:
-        //  -   `self.handle` was allocated by `storage`, as per pre-conditions.
+        //  -   `self.handle` was allocated by `store`, as per pre-conditions.
         //  -   `self.handle` is still valid, as per pre-conditions.
-        let pointer = unsafe { self.resolve_raw(storage) };
+        let pointer = unsafe { self.resolve_raw(store) };
 
         //  Safety:
         //  -   `pointer` points to a live instance of `T`, as per type-invariant.
-        //  -   The resulting reference borrows `storage` immutably, guaranteeing it won't be invalidated by moving
-        //      or destroying storage, though it may still be invalidated by allocating.
+        //  -   The resulting reference borrows `store` immutably, guaranteeing it won't be invalidated by moving
+        //      or destroying store, though it may still be invalidated by allocating.
         unsafe { pointer.as_ref() }
     }
 
@@ -172,30 +172,30 @@ impl<T: ?Sized, H: Copy> TypedHandle<T, H> {
     ///
     /// #   Safety
     ///
-    /// -   `self` must have been allocated by `storage`.
+    /// -   `self` must have been allocated by `store`.
     /// -   `self` must still be valid.
     /// -   `self` must be associated to a block of memory containing a valid instance of `T`.
     /// -   No access through any reference to this instance of `T` must overlap with accesses through the result.
-    /// -   The reference is only guaranteed to be valid as long as `self` is valid. Most notably, unless `storage`
-    ///     implements `MultipleStorage` allocating from `storage` will invalidate it.
+    /// -   The reference is only guaranteed to be valid as long as `self` is valid. Most notably, unless `store`
+    ///     implements `MultipleStore` allocating from `store` will invalidate it.
     /// -   The reference is only guaranteed to be valid as long as pointers resolved from `self` are not invalidated.
-    ///     Most notably, unless `storage` implements `StableStorage`, any method call on `storage`, including other
+    ///     Most notably, unless `store` implements `StableStore`, any method call on `store`, including other
     ///     `resolve` calls, may invalidate the reference.
     #[inline(always)]
     #[allow(clippy::mut_from_ref)]
-    pub unsafe fn resolve_mut<'a, S>(&mut self, storage: &'a S) -> &'a mut T
+    pub unsafe fn resolve_mut<'a, S>(&mut self, store: &'a S) -> &'a mut T
     where
-        S: Storage<Handle = H>,
+        S: Store<Handle = H>,
     {
         //  Safety:
-        //  -   `self.handle` was allocated by `storage`, as per pre-conditions.
+        //  -   `self.handle` was allocated by `store`, as per pre-conditions.
         //  -   `self.handle` is still valid, as per pre-conditions.
-        let mut pointer = unsafe { self.resolve_raw(storage) };
+        let mut pointer = unsafe { self.resolve_raw(store) };
 
         //  Safety:
         //  -   `pointer` points to a live instance of `T`, as per type-invariant.
-        //  -   The resulting reference borrows `storage` immutably, guaranteeing it won't be invalidated by moving
-        //      or destroying storage, though it may still be invalidated by allocating.
+        //  -   The resulting reference borrows `store` immutably, guaranteeing it won't be invalidated by moving
+        //      or destroying store, though it may still be invalidated by allocating.
         unsafe { pointer.as_mut() }
     }
 
@@ -203,22 +203,22 @@ impl<T: ?Sized, H: Copy> TypedHandle<T, H> {
     ///
     /// #   Safety
     ///
-    /// -   `self` must have been allocated by `storage`.
+    /// -   `self` must have been allocated by `store`.
     /// -   `self` must still be valid.
-    /// -   The pointer is only guaranteed to be valid as long as `self` is valid. Most notably, unless `storage`
-    ///     implements `MultipleStorage` allocating from `storage` will invalidate it.
+    /// -   The pointer is only guaranteed to be valid as long as `self` is valid. Most notably, unless `store`
+    ///     implements `MultipleStore` allocating from `store` will invalidate it.
     /// -   The pointer is only guaranteed to be valid as long as pointers resolved from `self` are not invalidated.
-    ///     Most notably, unless `storage` implements `StableStorage`, any method call on `storage`, including other
+    ///     Most notably, unless `store` implements `StableStore`, any method call on `store`, including other
     ///     `resolve` calls, may invalidate the pointer.
     #[inline(always)]
-    pub unsafe fn resolve_raw<S>(&self, storage: &S) -> NonNull<T>
+    pub unsafe fn resolve_raw<S>(&self, store: &S) -> NonNull<T>
     where
-        S: Storage<Handle = H>,
+        S: Store<Handle = H>,
     {
         //  Safety:
-        //  -   `self.handle` was allocated by `storage`, as per pre-conditions.
+        //  -   `self.handle` was allocated by `store`, as per pre-conditions.
         //  -   `self.handle` is still valid, as per pre-conditions.
-        let pointer = unsafe { storage.resolve(self.handle) };
+        let pointer = unsafe { store.resolve(self.handle) };
 
         NonNull::from_raw_parts(pointer.cast(), self.metadata.get())
     }
@@ -258,12 +258,12 @@ impl<T, H: Copy> TypedHandle<[T], H> {
     ///
     /// #   Safety
     ///
-    /// -   `self` must have been allocated by `storage`.
+    /// -   `self` must have been allocated by `store`.
     /// -   `self` must still be valid.
     /// -   `new_size` must be greater than or equal to `self.len()`.
-    pub unsafe fn grow<S>(&mut self, new_size: usize, storage: &S) -> Result<(), AllocError>
+    pub unsafe fn grow<S>(&mut self, new_size: usize, store: &S) -> Result<(), AllocError>
     where
-        S: Storage<Handle = H>,
+        S: Store<Handle = H>,
     {
         debug_assert!(new_size >= self.len());
 
@@ -271,11 +271,11 @@ impl<T, H: Copy> TypedHandle<[T], H> {
         let (new_layout, _) = Layout::new::<T>().repeat(new_size).map_err(|_| AllocError)?;
 
         //  Safety:
-        //  -   `self.handle` was allocated by `storage`, as per pre-conditions.
+        //  -   `self.handle` was allocated by `store`, as per pre-conditions.
         //  -   `self.handle` is still valid, as per pre-conditions.
         //  -   `old_layout` fits the block of memory associated to `self.handle`, by construction.
         //  -   `new_layout`'s size is greater than or equal to the size of `old_layout`, as per pre-conditions.
-        let (handle, _) = unsafe { storage.grow(self.handle, old_layout, new_layout)? };
+        let (handle, _) = unsafe { store.grow(self.handle, old_layout, new_layout)? };
 
         self.handle = handle;
 
@@ -291,12 +291,12 @@ impl<T, H: Copy> TypedHandle<[T], H> {
     ///
     /// #   Safety
     ///
-    /// -   `self` must have been allocated by `storage`.
+    /// -   `self` must have been allocated by `store`.
     /// -   `self` must still be valid.
     /// -   `new_size` must be greater than or equal to `self.len()`.
-    pub unsafe fn grow_zeroed<S>(&mut self, new_size: usize, storage: &S) -> Result<(), AllocError>
+    pub unsafe fn grow_zeroed<S>(&mut self, new_size: usize, store: &S) -> Result<(), AllocError>
     where
-        S: Storage<Handle = H>,
+        S: Store<Handle = H>,
     {
         debug_assert!(new_size >= self.len());
 
@@ -304,11 +304,11 @@ impl<T, H: Copy> TypedHandle<[T], H> {
         let (new_layout, _) = Layout::new::<T>().repeat(new_size).map_err(|_| AllocError)?;
 
         //  Safety:
-        //  -   `self.handle` was allocated by `storage`, as per pre-conditions.
+        //  -   `self.handle` was allocated by `store`, as per pre-conditions.
         //  -   `self.handle` is still valid, as per pre-conditions.
         //  -   `old_layout` fits the block of memory associated to `self.handle`, by construction.
         //  -   `new_layout`'s size is greater than or equal to the size of `old_layout`, as per pre-conditions.
-        let (handle, _) = unsafe { storage.grow_zeroed(self.handle, old_layout, new_layout)? };
+        let (handle, _) = unsafe { store.grow_zeroed(self.handle, old_layout, new_layout)? };
 
         self.handle = handle;
 
@@ -323,12 +323,12 @@ impl<T, H: Copy> TypedHandle<[T], H> {
     ///
     /// #   Safety
     ///
-    /// -   `self` must have been allocated by `storage`.
+    /// -   `self` must have been allocated by `store`.
     /// -   `self` must still be valid.
     /// -   `new_size` must be less than or equal to `self.len()`.
-    pub unsafe fn shrink<S>(&mut self, new_size: usize, storage: &S) -> Result<(), AllocError>
+    pub unsafe fn shrink<S>(&mut self, new_size: usize, store: &S) -> Result<(), AllocError>
     where
-        S: Storage<Handle = H>,
+        S: Store<Handle = H>,
     {
         debug_assert!(new_size <= self.len());
 
@@ -336,11 +336,11 @@ impl<T, H: Copy> TypedHandle<[T], H> {
         let (new_layout, _) = Layout::new::<T>().repeat(new_size).map_err(|_| AllocError)?;
 
         //  Safety:
-        //  -   `self.handle` was allocated by `storage`, as per pre-conditions.
+        //  -   `self.handle` was allocated by `store`, as per pre-conditions.
         //  -   `self.handle` is still valid, as per pre-conditions.
         //  -   `old_layout` fits the block of memory associated to `self.handle`, by construction.
         //  -   `new_layout`'s size is less than or equal to the size of `old_layout`, as per pre-conditions.
-        let (handle, _) = unsafe { storage.shrink(self.handle, old_layout, new_layout)? };
+        let (handle, _) = unsafe { store.shrink(self.handle, old_layout, new_layout)? };
 
         self.handle = handle;
 

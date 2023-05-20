@@ -1,4 +1,4 @@
-//! Possible extensions to be built around `Storage`.
+//! Possible extensions to be built around `Store`.
 
 pub mod typed;
 pub mod typed_metadata;

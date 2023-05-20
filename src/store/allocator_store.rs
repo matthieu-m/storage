@@ -1,13 +1,13 @@
-//! Wraps an allocator to provide a `Storage` API.
+//! Wraps an allocator to provide a `Store` API.
 
 use core::{
     alloc::{AllocError, Allocator, Layout},
     ptr::NonNull,
 };
 
-use crate::interface::{MultipleStorage, PinningStorage, StableStorage, Storage};
+use crate::interface::{MultipleStore, PinningStore, StableStore, Store};
 
-unsafe impl<A> Storage for A
+unsafe impl<A> Store for A
 where
     A: Allocator,
 {
@@ -88,12 +88,12 @@ where
 
 //  Safety:
 //  -   `Allocator` does not invalidate existing allocations when allocating.
-unsafe impl<A> MultipleStorage for A where A: Allocator {}
+unsafe impl<A> MultipleStore for A where A: Allocator {}
 
 //  Safety:
 //  -   `Allocator` allocations are pinned.
-unsafe impl<A> StableStorage for A where A: Allocator {}
+unsafe impl<A> StableStore for A where A: Allocator {}
 
 //  Safety:
 //  -   `Allocator` allocations are pinned.
-unsafe impl<A> PinningStorage for A where A: Allocator {}
+unsafe impl<A> PinningStore for A where A: Allocator {}

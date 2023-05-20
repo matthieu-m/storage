@@ -7,7 +7,7 @@ use core::ops::CoerceUnsized;
 
 use crate::{
     extension::{typed::TypedHandle, typed_metadata::TypedMetadata},
-    interface::Storage,
+    interface::Store,
 };
 
 /// A typed, unique handle.
@@ -16,48 +16,48 @@ pub struct UniqueHandle<T: ?Sized, H>(TypedHandle<T, H>);
 impl<T, H: Copy> UniqueHandle<T, H> {
     /// Creates a dangling handle.
     #[inline(always)]
-    pub fn dangling<S>(storage: &S) -> Self
+    pub fn dangling<S>(store: &S) -> Self
     where
-        S: Storage<Handle = H>,
+        S: Store<Handle = H>,
     {
-        Self(TypedHandle::dangling(storage))
+        Self(TypedHandle::dangling(store))
     }
 
     /// Creates a new handle, pointing to a `T`.
     ///
-    /// Unless `storage` implements `MultipleStorage`, this invalidates all existing handles of `storage`.
+    /// Unless `store` implements `MultipleStore`, this invalidates all existing handles of `store`.
     #[inline(always)]
-    pub fn new<S>(value: T, storage: &S) -> Result<Self, AllocError>
+    pub fn new<S>(value: T, store: &S) -> Result<Self, AllocError>
     where
-        S: Storage<Handle = H>,
+        S: Store<Handle = H>,
     {
-        TypedHandle::new(value, storage).map(Self)
+        TypedHandle::new(value, store).map(Self)
     }
 
     /// Allocates a new handle, with enough space for `T`.
     ///
     /// The allocated memory is left uninitialized.
     ///
-    /// Unless `storage` implements `MultipleStorage`, this invalidates all existing handles of `storage`.
+    /// Unless `store` implements `MultipleStore`, this invalidates all existing handles of `store`.
     #[inline(always)]
-    pub fn allocate<S>(storage: &S) -> Result<Self, AllocError>
+    pub fn allocate<S>(store: &S) -> Result<Self, AllocError>
     where
-        S: Storage<Handle = H>,
+        S: Store<Handle = H>,
     {
-        TypedHandle::allocate(storage).map(Self)
+        TypedHandle::allocate(store).map(Self)
     }
 
     /// Allocates a new handle, with enough space for `T`.
     ///
     /// The allocated memory is zeroed out.
     ///
-    /// Unless `storage` implements `MultipleStorage`, this invalidates all existing handles of `storage`.
+    /// Unless `store` implements `MultipleStore`, this invalidates all existing handles of `store`.
     #[inline(always)]
-    pub fn allocate_zeroed<S>(storage: &S) -> Result<Self, AllocError>
+    pub fn allocate_zeroed<S>(store: &S) -> Result<Self, AllocError>
     where
-        S: Storage<Handle = H>,
+        S: Store<Handle = H>,
     {
-        TypedHandle::allocate_zeroed(storage).map(Self)
+        TypedHandle::allocate_zeroed(store).map(Self)
     }
 }
 
@@ -86,97 +86,97 @@ impl<T: ?Sized, H: Copy> UniqueHandle<T, H> {
     ///
     /// #   Safety
     ///
-    /// -   `self` must have been allocated by `storage`.
+    /// -   `self` must have been allocated by `store`.
     /// -   `self` must still be valid.
     #[inline(always)]
-    pub unsafe fn deallocate<S>(self, storage: &S)
+    pub unsafe fn deallocate<S>(self, store: &S)
     where
-        S: Storage<Handle = H>,
+        S: Store<Handle = H>,
     {
         //  Safety:
-        //  -   `self.0` has been allocated by `storage`, as per pre-conditions.
+        //  -   `self.0` has been allocated by `store`, as per pre-conditions.
         //  -   `self.0` is valid, as per pre-conditions.
-        unsafe { self.0.deallocate(storage) }
+        unsafe { self.0.deallocate(store) }
     }
 
     /// Resolves the handle to a reference, borrowing the handle.
     ///
     /// #   Safety
     ///
-    /// -   `self` must have been allocated by `storage`.
+    /// -   `self` must have been allocated by `store`.
     /// -   `self` must still be valid.
     /// -   `self` must be associated to a block of memory containing a valid instance of `T`.
-    /// -   The reference is only guaranteed to be valid as long as `self` is valid. Most notably, unless `storage`
-    ///     implements `MultipleStorage` allocating from `storage` will invalidate it.
+    /// -   The reference is only guaranteed to be valid as long as `self` is valid. Most notably, unless `store`
+    ///     implements `MultipleStore` allocating from `store` will invalidate it.
     /// -   The reference is only guaranteed to be valid as long as pointers resolved from `self` are not invalidated.
-    ///     Most notably, unless `storage` implements `StableStorage`, any method call on `storage`, including other
+    ///     Most notably, unless `store` implements `StableStore`, any method call on `store`, including other
     ///     `resolve` calls, may invalidate the reference.
     #[inline(always)]
-    pub unsafe fn resolve<'a, S>(&'a self, storage: &'a S) -> &'a T
+    pub unsafe fn resolve<'a, S>(&'a self, store: &'a S) -> &'a T
     where
-        S: Storage<Handle = H>,
+        S: Store<Handle = H>,
     {
         //  Safety:
-        //  -   `self.handle` was allocated by `storage`, as per pre-conditions.
+        //  -   `self.handle` was allocated by `store`, as per pre-conditions.
         //  -   `self.handle` is still valid, as per pre-conditions.
         //  -   `self.handle` is associated with a block of memory containing a live instance of `T`, as per
         //      pre-conditions.
         //  -   The resulting reference borrows `self` immutably, guaranteeing that no mutable reference exist, nor can
         //      be creating during its lifetime.
-        //  -   The resulting reference borrows `storage` immutably, guaranteeing it won't be invalidated by moving
-        //      or destroying storage, though it may still be invalidated by allocating.
-        unsafe { self.0.resolve(storage) }
+        //  -   The resulting reference borrows `store` immutably, guaranteeing it won't be invalidated by moving
+        //      or destroying store, though it may still be invalidated by allocating.
+        unsafe { self.0.resolve(store) }
     }
 
     /// Resolves the handle to a reference, borrowing the handle.
     ///
     /// #   Safety
     ///
-    /// -   `self` must have been allocated by `storage`.
+    /// -   `self` must have been allocated by `store`.
     /// -   `self` must still be valid.
     /// -   `self` must be associated to a block of memory containing a valid instance of `T`.
-    /// -   The reference is only guaranteed to be valid as long as `self` is valid. Most notably, unless `storage`
-    ///     implements `MultipleStorage` allocating from `storage` will invalidate it.
+    /// -   The reference is only guaranteed to be valid as long as `self` is valid. Most notably, unless `store`
+    ///     implements `MultipleStore` allocating from `store` will invalidate it.
     /// -   The reference is only guaranteed to be valid as long as pointers resolved from `self` are not invalidated.
-    ///     Most notably, unless `storage` implements `StableStorage`, any method call on `storage`, including other
+    ///     Most notably, unless `store` implements `StableStore`, any method call on `store`, including other
     ///     `resolve` calls, may invalidate the reference.
     #[inline(always)]
-    pub unsafe fn resolve_mut<'a, S>(&'a mut self, storage: &'a S) -> &'a mut T
+    pub unsafe fn resolve_mut<'a, S>(&'a mut self, store: &'a S) -> &'a mut T
     where
-        S: Storage<Handle = H>,
+        S: Store<Handle = H>,
     {
         //  Safety:
-        //  -   `self.handle` was allocated by `storage`, as per pre-conditions.
+        //  -   `self.handle` was allocated by `store`, as per pre-conditions.
         //  -   `self.handle` is still valid, as per pre-conditions.
         //  -   `self.handle` is associated with a block of memory containing a live instance of `T`, as per
         //      pre-conditions.
         //  -   The resulting reference borrows `self` mutably, guaranteeing that no reference exist, nor can be
         //      created during its lifetime.
-        //  -   The resulting reference borrows `storage` immutably, guaranteeing it won't be invalidated by moving
-        //      or destroying storage, though it may still be invalidated by allocating.
-        unsafe { self.0.resolve_mut(storage) }
+        //  -   The resulting reference borrows `store` immutably, guaranteeing it won't be invalidated by moving
+        //      or destroying store, though it may still be invalidated by allocating.
+        unsafe { self.0.resolve_mut(store) }
     }
 
     /// Resolves the handle to a reference, borrowing the handle.
     ///
     /// #   Safety
     ///
-    /// -   `self` must have been allocated by `storage`.
+    /// -   `self` must have been allocated by `store`.
     /// -   `self` must still be valid.
-    /// -   The pointer is only guaranteed to be valid as long as `self` is valid. Most notably, unless `storage`
-    ///     implements `MultipleStorage` allocating from `storage` will invalidate it.
+    /// -   The pointer is only guaranteed to be valid as long as `self` is valid. Most notably, unless `store`
+    ///     implements `MultipleStore` allocating from `store` will invalidate it.
     /// -   The pointer is only guaranteed to be valid as long as pointers resolved from `self` are not invalidated.
-    ///     Most notably, unless `storage` implements `StableStorage`, any method call on `storage`, including other
+    ///     Most notably, unless `store` implements `StableStore`, any method call on `store`, including other
     ///     `resolve` calls, may invalidate the pointer.
     #[inline(always)]
-    pub unsafe fn resolve_raw<S>(&self, storage: &S) -> NonNull<T>
+    pub unsafe fn resolve_raw<S>(&self, store: &S) -> NonNull<T>
     where
-        S: Storage<Handle = H>,
+        S: Store<Handle = H>,
     {
         //  Safety:
-        //  -   `self.handle` was allocated by `storage`, as per pre-conditions.
+        //  -   `self.handle` was allocated by `store`, as per pre-conditions.
         //  -   `self.handle` is still valid, as per pre-conditions.
-        unsafe { self.0.resolve_raw(storage) }
+        unsafe { self.0.resolve_raw(store) }
     }
 
     /// Coerces the handle into another.
@@ -206,18 +206,18 @@ impl<T, H: Copy> UniqueHandle<[T], H> {
     ///
     /// #   Safety
     ///
-    /// -   `self` must have been allocated by `storage`.
+    /// -   `self` must have been allocated by `store`.
     /// -   `self` must still be valid.
     /// -   `new_size` must be greater than or equal to `self.len()`.
-    pub unsafe fn grow<S>(&mut self, new_size: usize, storage: &S) -> Result<(), AllocError>
+    pub unsafe fn grow<S>(&mut self, new_size: usize, store: &S) -> Result<(), AllocError>
     where
-        S: Storage<Handle = H>,
+        S: Store<Handle = H>,
     {
         //  Safety:
-        //  -   `self.0` has been allocated by `storage`, as per pre-conditions.
+        //  -   `self.0` has been allocated by `store`, as per pre-conditions.
         //  -   `self.0` is still valid, as per pre-conditions.
         //  -   `new_size` is greater than or equal to `self.0.len()`.
-        unsafe { self.0.grow(new_size, storage) }
+        unsafe { self.0.grow(new_size, store) }
     }
 
     /// Grows the block of memory associated with the handle.
@@ -226,18 +226,18 @@ impl<T, H: Copy> UniqueHandle<[T], H> {
     ///
     /// #   Safety
     ///
-    /// -   `self` must have been allocated by `storage`.
+    /// -   `self` must have been allocated by `store`.
     /// -   `self` must still be valid.
     /// -   `new_size` must be greater than or equal to `self.len()`.
-    pub unsafe fn grow_zeroed<S>(&mut self, new_size: usize, storage: &S) -> Result<(), AllocError>
+    pub unsafe fn grow_zeroed<S>(&mut self, new_size: usize, store: &S) -> Result<(), AllocError>
     where
-        S: Storage<Handle = H>,
+        S: Store<Handle = H>,
     {
         //  Safety:
-        //  -   `self.0` has been allocated by `storage`, as per pre-conditions.
+        //  -   `self.0` has been allocated by `store`, as per pre-conditions.
         //  -   `self.0` is still valid, as per pre-conditions.
         //  -   `new_size` is greater than or equal to `self.0.len()`.
-        unsafe { self.0.grow_zeroed(new_size, storage) }
+        unsafe { self.0.grow_zeroed(new_size, store) }
     }
 
     /// Shrinks the block of memory associated with the handle.
@@ -246,18 +246,18 @@ impl<T, H: Copy> UniqueHandle<[T], H> {
     ///
     /// #   Safety
     ///
-    /// -   `self` must have been allocated by `storage`.
+    /// -   `self` must have been allocated by `store`.
     /// -   `self` must still be valid.
     /// -   `new_size` must be less than or equal to `self.len()`.
-    pub unsafe fn shrink<S>(&mut self, new_size: usize, storage: &S) -> Result<(), AllocError>
+    pub unsafe fn shrink<S>(&mut self, new_size: usize, store: &S) -> Result<(), AllocError>
     where
-        S: Storage<Handle = H>,
+        S: Store<Handle = H>,
     {
         //  Safety:
-        //  -   `self.0` has been allocated by `storage`, as per pre-conditions.
+        //  -   `self.0` has been allocated by `store`, as per pre-conditions.
         //  -   `self.0` is still valid, as per pre-conditions.
         //  -   `new_size` is less than or equal to `self.0.len()`.
-        unsafe { self.0.shrink(new_size, storage) }
+        unsafe { self.0.shrink(new_size, store) }
     }
 }
 

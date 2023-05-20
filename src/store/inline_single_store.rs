@@ -1,6 +1,6 @@
-//! An implementation of `Storage` providing a single, inline, block of memory.
+//! An implementation of `Store` providing a single, inline, block of memory.
 //!
-//! This storage is suitable for `Box`, `Vec`, or `VecDeque`, for example.
+//! This store is suitable for `Box`, `Vec`, or `VecDeque`, for example.
 
 use core::{
     alloc::{AllocError, Layout},
@@ -10,20 +10,20 @@ use core::{
     ptr::{self, NonNull},
 };
 
-use crate::interface::{StableStorage, Storage};
+use crate::interface::{StableStore, Store};
 
-/// An implementation of `Storage` providing a single, inline, block of memory.
+/// An implementation of `Store` providing a single, inline, block of memory.
 ///
 /// The block of memory is aligned and sized as per `T`.
-pub struct InlineSingleStorage<T>(UnsafeCell<MaybeUninit<T>>);
+pub struct InlineSingleStore<T>(UnsafeCell<MaybeUninit<T>>);
 
-impl<T> Default for InlineSingleStorage<T> {
+impl<T> Default for InlineSingleStore<T> {
     fn default() -> Self {
         Self(UnsafeCell::new(MaybeUninit::uninit()))
     }
 }
 
-unsafe impl<T> Storage for InlineSingleStorage<T> {
+unsafe impl<T> Store for InlineSingleStore<T> {
     type Handle = ();
 
     fn dangling(&self) -> Self::Handle {}
@@ -121,13 +121,13 @@ unsafe impl<T> Storage for InlineSingleStorage<T> {
 
 //  Safety:
 //  -   `self.resolve(handle)` always returns the same address, as long as `self` doesn't move.
-unsafe impl<T> StableStorage for InlineSingleStorage<T> {}
+unsafe impl<T> StableStore for InlineSingleStore<T> {}
 
-impl<T> fmt::Debug for InlineSingleStorage<T> {
+impl<T> fmt::Debug for InlineSingleStore<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         let layout = Layout::new::<T>();
 
-        f.debug_struct("InlineSingleStorage")
+        f.debug_struct("InlineSingleStore")
             .field("size", &layout.size())
             .field("align", &layout.align())
             .finish()
@@ -138,7 +138,7 @@ impl<T> fmt::Debug for InlineSingleStorage<T> {
 //  Implementation
 //
 
-impl<T> InlineSingleStorage<T> {
+impl<T> InlineSingleStore<T> {
     fn validate_layout(layout: Layout) -> Result<(), AllocError> {
         let own = Layout::new::<T>();
 

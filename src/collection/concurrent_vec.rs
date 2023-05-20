@@ -11,35 +11,35 @@ use core::{
     sync::atomic::{AtomicIsize, Ordering},
 };
 
-use crate::{extension::unique::UniqueHandle, interface::Storage};
+use crate::{extension::unique::UniqueHandle, interface::Store};
 
 /// A fixed-capacity vector which can be modified concurrently.
-pub struct ConcurrentVec<T, S: Storage> {
+pub struct ConcurrentVec<T, S: Store> {
     //  Invariants:
     //  -   `length` is negative if a thread is appending a new element.
     //  -   `length.abs() - 1 <= self.store.capacity`.
     //  -   Elements in 0..(length.abs() - 1) are initialized.
     length: AtomicIsize,
-    store: Store<T, S>,
+    store: Inner<T, S>,
 }
 
-impl<T, S: Storage> ConcurrentVec<T, S> {
-    /// Creates a vector with a given capacity and a default storage.
+impl<T, S: Store> ConcurrentVec<T, S> {
+    /// Creates a vector with a given capacity and a default store.
     ///
     /// Since the vector cannot be resized later, pick well!
     pub fn new(capacity: usize) -> Self
     where
         S: Default,
     {
-        Self::with_storage(capacity, S::default())
+        Self::with_store(capacity, S::default())
     }
 
-    /// Creates a vector with a given capacity and storage.
+    /// Creates a vector with a given capacity and store.
     ///
     /// Since the vector cannot be resized later, pick well!
-    pub fn with_storage(capacity: usize, storage: S) -> Self {
+    pub fn with_store(capacity: usize, store: S) -> Self {
         let length = AtomicIsize::new(1);
-        let store = Store::with_storage(capacity, storage);
+        let store = Inner::with_store(capacity, store);
 
         Self { length, store }
     }
@@ -192,10 +192,10 @@ impl<T, S: Storage> ConcurrentVec<T, S> {
 impl<T, S> Clone for ConcurrentVec<T, S>
 where
     T: Clone,
-    S: Storage + Clone,
+    S: Store + Clone,
 {
     fn clone(&self) -> Self {
-        let clone = Self::with_storage(self.store.capacity(), self.store.storage.clone());
+        let clone = Self::with_store(self.store.capacity(), self.store.store.clone());
 
         let elements = self.as_slice();
         let slots = clone.store.slots();
@@ -221,7 +221,7 @@ where
     }
 }
 
-impl<T, S: Storage> Drop for ConcurrentVec<T, S> {
+impl<T, S: Store> Drop for ConcurrentVec<T, S> {
     fn drop(&mut self) {
         if !mem::needs_drop::<T>() {
             return;
@@ -243,7 +243,7 @@ impl<T, S: Storage> Drop for ConcurrentVec<T, S> {
     }
 }
 
-impl<T, S: Storage> fmt::Debug for ConcurrentVec<T, S>
+impl<T, S: Store> fmt::Debug for ConcurrentVec<T, S>
 where
     T: fmt::Debug,
 {
@@ -252,7 +252,7 @@ where
     }
 }
 
-impl<T, S: Storage> ops::Deref for ConcurrentVec<T, S> {
+impl<T, S: Store> ops::Deref for ConcurrentVec<T, S> {
     type Target = [T];
 
     fn deref(&self) -> &Self::Target {
@@ -260,7 +260,7 @@ impl<T, S: Storage> ops::Deref for ConcurrentVec<T, S> {
     }
 }
 
-impl<T, S: Storage> ops::DerefMut for ConcurrentVec<T, S> {
+impl<T, S: Store> ops::DerefMut for ConcurrentVec<T, S> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.as_slice_mut()
     }
@@ -271,7 +271,7 @@ impl<T, S: Storage> ops::DerefMut for ConcurrentVec<T, S> {
 unsafe impl<T, S> Send for ConcurrentVec<T, S>
 where
     T: Send,
-    S: Storage + Send,
+    S: Store + Send,
 {
 }
 
@@ -280,7 +280,7 @@ where
 unsafe impl<T, S> Sync for ConcurrentVec<T, S>
 where
     T: Sync,
-    S: Storage + Sync,
+    S: Store + Sync,
 {
 }
 
@@ -288,7 +288,7 @@ where
 //  Implementation
 //
 
-impl<T, S: Storage> ConcurrentVec<T, S> {
+impl<T, S: Store> ConcurrentVec<T, S> {
     //  Returns a pointer to the slice of initialized elements.
     fn initialized(&self) -> NonNull<[T]> {
         //  Safety:
@@ -314,17 +314,17 @@ impl<T, S: Storage> ConcurrentVec<T, S> {
     }
 }
 
-struct Store<T, S: Storage> {
-    storage: S,
+struct Inner<T, S: Store> {
+    store: S,
     handle: ManuallyDrop<UniqueHandle<[T], S::Handle>>,
 }
 
-impl<T, S: Storage> Store<T, S> {
-    //  Creates a store with a given capacity and storage.
-    fn with_storage(capacity: usize, storage: S) -> Self {
+impl<T, S: Store> Inner<T, S> {
+    //  Creates a store with a given capacity and store.
+    fn with_store(capacity: usize, store: S) -> Self {
         let layout = Layout::array::<T>(capacity).expect("Small enough capacity");
 
-        let (handle, _) = storage.allocate(layout).expect("Successful allocation");
+        let (handle, _) = store.allocate(layout).expect("Successful allocation");
 
         //  Safety:
         //  -   `handle` is associated to a block of memory which fits `[T; capacity]`.
@@ -334,36 +334,36 @@ impl<T, S: Storage> Store<T, S> {
 
         let handle = ManuallyDrop::new(handle);
 
-        Self { storage, handle }
+        Self { store, handle }
     }
 
-    //  Returns the capacity of the storage, in number of elements.
+    //  Returns the capacity of the store, in number of elements.
     fn capacity(&self) -> usize {
         self.handle.len()
     }
 
-    //  Retrieves the slots of storage.
+    //  Retrieves the slots of store.
     //
     //  The slice is only valid as long as `self` is live.
     fn slots(&self) -> NonNull<[T]> {
         //  Safety:
-        //  -   `self.handle` has been allocated by `self.storage`.
+        //  -   `self.handle` has been allocated by `self.store`.
         //  -   `self.handle` is still valid, since no operation other than `resolve` occurred.
         //  -   The block of memory associated to the handle will only be used as long as `self.handle` is valid.
-        unsafe { self.handle.resolve_raw(&self.storage) }
+        unsafe { self.handle.resolve_raw(&self.store) }
     }
 }
 
-impl<T, S: Storage> Drop for Store<T, S> {
+impl<T, S: Store> Drop for Inner<T, S> {
     fn drop(&mut self) {
         //  Safety:
         //  -   `self.handle` will no longer be used.
         let handle = unsafe { ManuallyDrop::take(&mut self.handle) };
 
         //  Safety:
-        //  -   `handle` has been allocated by `self.storage`.
+        //  -   `handle` has been allocated by `self.store`.
         //  -   `handle` is still valid, since no operation other than `resolve` occurred.
-        unsafe { handle.deallocate(&self.storage) }
+        unsafe { handle.deallocate(&self.store) }
     }
 }
 

@@ -15,38 +15,38 @@ use oorandom::Rand32;
 
 use crate::{
     extension::{typed::TypedHandle, typed_metadata::TypedMetadata},
-    interface::{MultipleStorage, StableStorage, Storage},
+    interface::{MultipleStore, StableStore, Store},
 };
 
 /// A Skip List, with minimal memory usage.
-pub struct SkipList<K, V, S: Storage> {
+pub struct SkipList<K, V, S: Store> {
     //  Invariant: `length == 0` => `head` is a dangling handle.
     length: usize,
     head: NodeHandle<K, V, S::Handle>,
-    storage: S,
+    store: S,
     prng: Rand32,
 }
 
-impl<K, V, S: Storage> SkipList<K, V, S> {
+impl<K, V, S: Store> SkipList<K, V, S> {
     /// Creates a new, empty, instance.
     pub fn new() -> Self
     where
         S: Default,
     {
-        Self::with_storage(S::default())
+        Self::with_store(S::default())
     }
 
-    /// Creates a new, empty, instance with the given storage.
-    pub fn with_storage(storage: S) -> Self {
+    /// Creates a new, empty, instance with the given store.
+    pub fn with_store(store: S) -> Self {
         let length = 0;
-        let head = TypedHandle::dangling(&storage);
+        let head = TypedHandle::dangling(&store);
         //  0 is not particularly good; on the allocation of the first node it'll be switched with its address instead.
         let prng = Rand32::new(0);
 
         Self {
             length,
             head,
-            storage,
+            store,
             prng,
         }
     }
@@ -79,10 +79,10 @@ impl<K, V, S: Storage> SkipList<K, V, S> {
         for _ in 0..(length - 1) {
             let next_handle = {
                 //  Safety:
-                //  -   `handle` has been allocated by `self.storage`.
+                //  -   `handle` has been allocated by `self.store`.
                 //  -   `handle` is valid, since `length` nodes exist.
                 //  -   No other reference to the block of memory of `handle` exist, since `self` is borrowed mutably.
-                let node = unsafe { handle.resolve_mut(&self.storage) };
+                let node = unsafe { handle.resolve_mut(&self.store) };
 
                 let links = node.links();
 
@@ -92,29 +92,29 @@ impl<K, V, S: Storage> SkipList<K, V, S> {
             };
 
             //  Safety:
-            //  -   `handle` has been allocated by `self.storage`.
+            //  -   `handle` has been allocated by `self.store`.
             //  -   `handle` is valid, since `length` nodes exist.
             //  -   No other reference to the block of memory of `handle` exist, since `self` is borrowed mutably.
-            unsafe { NodeHeader::<K, V, _>::deallocate(handle, &self.storage) };
+            unsafe { NodeHeader::<K, V, _>::deallocate(handle, &self.store) };
 
             handle = next_handle;
         }
 
         //  Safety:
-        //  -   `handle` has been allocated by `self.storage`.
+        //  -   `handle` has been allocated by `self.store`.
         //  -   `handle` is valid, since `length` nodes exist.
         //  -   No other reference to the block of memory of `handle` exist, since `self` is borrowed mutably.
-        unsafe { NodeHeader::<K, V, _>::deallocate(handle, &self.storage) };
+        unsafe { NodeHeader::<K, V, _>::deallocate(handle, &self.store) };
     }
 }
 
-impl<K, V, S: MultipleStorage + StableStorage> SkipList<K, V, S>
+impl<K, V, S: MultipleStore + StableStore> SkipList<K, V, S>
 where
     K: Ord,
 {
     /// Gets the value associated to a `key`, if it exists.
     pub fn get(&self, key: &K) -> Option<&V> {
-        Self::get_impl(key, self.length, self.head, &self.storage).map(|pointer| {
+        Self::get_impl(key, self.length, self.head, &self.store).map(|pointer| {
             //  Safety:
             //  -   `pointer` points to a valid instance of `V`.
             //  -   No mutable reference to `V` is active, since `self` is borrowed immutably.
@@ -125,7 +125,7 @@ where
 
     /// Gets the value associated to a `key`, if it exists.
     pub fn get_mut(&mut self, key: &K) -> Option<&mut V> {
-        Self::get_impl(key, self.length, self.head, &self.storage).map(|mut pointer| {
+        Self::get_impl(key, self.length, self.head, &self.store).map(|mut pointer| {
             //  Safety:
             //  -   `pointer` points to a valid instance of `V`.
             //  -   No other reference to `V` is active, since `self` is borrowed mutably.
@@ -139,13 +139,13 @@ where
     /// If a `key` comparing equal is already in the list, it is returned alongside the value it's in with.
     pub fn insert(&mut self, key: K, value: V) -> Option<(K, V)> {
         if self.length == 0 {
-            self.head = NodeHeader::new(key, value, 0, &self.storage).0;
+            self.head = NodeHeader::new(key, value, 0, &self.store).0;
             self.length = 1;
 
             //  Safety:
-            //  -   `self.head` was allocated by `self.storage`.
+            //  -   `self.head` was allocated by `self.store`.
             //  -   `self.head` is still valid.
-            let pointer = unsafe { self.head.resolve_raw(&self.storage) };
+            let pointer = unsafe { self.head.resolve_raw(&self.store) };
 
             let seed = pointer.as_ptr() as usize as u64;
 
@@ -163,17 +163,17 @@ where
         //      currently has, we need to reallocate the first node with more handles.
 
         //  Safety:
-        //  -   `self.head` was allocated by `self.storage.`
+        //  -   `self.head` was allocated by `self.store.`
         //  -   `self.head` is still valid, notably it is not dangling per invariant, since `self.length > 0`.
         //  -   No other reference to the block of memory exist, since `self` is borrowed mutably.
-        let mut node = unsafe { self.head.resolve_mut(&self.storage) };
+        let mut node = unsafe { self.head.resolve_mut(&self.store) };
         let head_links = node.number_links as usize;
 
         //  Well, that'll avoid having to reallocate `head`!
         if key < node.key {
             let target_links = cmp::max(target_links, head_links);
 
-            let (node, links) = NodeHeader::new(key, value, target_links, &self.storage);
+            let (node, links) = NodeHeader::new(key, value, target_links, &self.store);
 
             links.iter_mut().for_each(|link| *link = self.head);
 
@@ -210,10 +210,10 @@ where
                 let Some(next) = node.links_mut().get_mut(level) else { break };
 
                 //  Safety:
-                //  -   `next` was allocated by `self.storage.`
+                //  -   `next` was allocated by `self.store.`
                 //  -   `next` is still valid, since apart from `self.head`, only valid handles are kept.
                 //  -   No other reference to the block of memory exist, since `self` is borrowed mutably.
-                let next_node = unsafe { next.resolve_mut(&self.storage) };
+                let next_node = unsafe { next.resolve_mut(&self.store) };
 
                 if key > next_node.key {
                     if next_node.number_links == 0 {
@@ -243,7 +243,7 @@ where
         }
 
         //  `handles` is now filled, and a new node need be introduced.
-        let (mut handle, links) = NodeHeader::new(key, value, target_links, &self.storage);
+        let (mut handle, links) = NodeHeader::new(key, value, target_links, &self.store);
 
         //  Splice in the new node, at each level it participates in.
         for (prev_handle, dangling_handle) in handles.iter_mut().take(head_links).zip(links.iter_mut()) {
@@ -262,16 +262,16 @@ where
         //  Exchange with last, if it goes beyond last.
         if let Some(mut last) = last {
             //  Safety:
-            //  -   `next` was allocated by `self.storage.`
+            //  -   `next` was allocated by `self.store.`
             //  -   `next` is still valid, since apart from `self.head`, only valid handles are kept.
             //  -   No other reference to the block of memory exist, since `self` is borrowed mutably.
-            let last_node = unsafe { last.resolve_mut(&self.storage) };
+            let last_node = unsafe { last.resolve_mut(&self.store) };
 
             //  Safety:
-            //  -   `handle` was allocated by `self.storage`.
+            //  -   `handle` was allocated by `self.store`.
             //  -   `handle` is still valid.
             //  -   No other active reference to the block of memory pointed to by `handle` exists.
-            let new_node = unsafe { handle.resolve_mut(&self.storage) };
+            let new_node = unsafe { handle.resolve_mut(&self.store) };
 
             mem::swap(&mut last_node.key, &mut new_node.key);
             mem::swap(&mut last_node.value, &mut new_node.value);
@@ -292,14 +292,14 @@ where
         //  Reallocate head, if necessary.
         if target_links > head_links {
             //  Safety:
-            //  -   `self.head` was allocated by `self.storage`.
+            //  -   `self.head` was allocated by `self.store`.
             //  -   `self.head` is still valid.
             //  -   No other reference to the block of memory associated with `self.head` is active, since `self` is
             //      borrowed mutably.
             //  -   `head_links` is the number of links of `self.head`.
             //  -   `target_links > head_links`.
             self.head =
-                unsafe { NodeHeader::<K, V, _>::grow(self.head, handle, head_links, target_links, &self.storage) };
+                unsafe { NodeHeader::<K, V, _>::grow(self.head, handle, head_links, target_links, &self.store) };
         }
 
         self.length += 1;
@@ -308,7 +308,7 @@ where
     }
 }
 
-impl<K, V, S: Storage> Drop for SkipList<K, V, S> {
+impl<K, V, S: Store> Drop for SkipList<K, V, S> {
     fn drop(&mut self) {
         self.clear();
     }
@@ -316,7 +316,7 @@ impl<K, V, S: Storage> Drop for SkipList<K, V, S> {
 
 impl<K, V, S> Default for SkipList<K, V, S>
 where
-    S: MultipleStorage + Default,
+    S: MultipleStore + Default,
 {
     fn default() -> Self {
         Self::new()
@@ -329,7 +329,7 @@ where
 
 const MAX_NUMBER_LINKS: usize = 32;
 
-impl<K, V, S: Storage> SkipList<K, V, S> {
+impl<K, V, S: Store> SkipList<K, V, S> {
     //  Returns the number of links a (new) node should have.
     fn determine_number_links(&mut self) -> usize {
         (self.prng.rand_u32() | 1).trailing_ones() as usize
@@ -337,13 +337,13 @@ impl<K, V, S: Storage> SkipList<K, V, S> {
 
     //  #   Safety
     //
-    //  -   `handle` must have been allocated by `storage`.
+    //  -   `handle` must have been allocated by `store`.
     //  -   `handle` must still be valid.
-    unsafe fn resolve_value(handle: NodeHandle<K, V, S::Handle>, storage: &S) -> NonNull<V> {
+    unsafe fn resolve_value(handle: NodeHandle<K, V, S::Handle>, store: &S) -> NonNull<V> {
         //  Safety:
-        //  -   `handle` has been allocated by `storage`, as per pre-conditions.
+        //  -   `handle` has been allocated by `store`, as per pre-conditions.
         //  -   `handle` is still valid, as per pre-conditions.
-        let pointer = unsafe { handle.resolve_raw(storage) };
+        let pointer = unsafe { handle.resolve_raw(store) };
 
         let offset = mem::offset_of!(NodeHeader<K, V, S::Handle>, value);
 
@@ -358,20 +358,20 @@ impl<K, V, S: Storage> SkipList<K, V, S> {
     }
 }
 
-impl<K, V, S: MultipleStorage + StableStorage> SkipList<K, V, S>
+impl<K, V, S: MultipleStore + StableStore> SkipList<K, V, S>
 where
     K: Ord,
 {
-    fn get_impl(key: &K, length: usize, head: NodeHandle<K, V, S::Handle>, storage: &S) -> Option<NonNull<V>> {
+    fn get_impl(key: &K, length: usize, head: NodeHandle<K, V, S::Handle>, store: &S) -> Option<NonNull<V>> {
         if length == 0 {
             return None;
         }
 
         //  Safety:
-        //  -   `head` was allocated by `storage.`
+        //  -   `head` was allocated by `store.`
         //  -   `head` is still valid, notably it is not dangling per invariant, since `length > 0`.
         //  -   `head` is associated to block of memory containing a live instance of `NodeHeader`.
-        let mut node = unsafe { head.resolve(storage) };
+        let mut node = unsafe { head.resolve(store) };
         let number_links = node.number_links as usize;
 
         if *key < node.key {
@@ -380,9 +380,9 @@ where
 
         if *key == node.key {
             //  Safety:
-            //  -   `head` was allocated by `storage`.
+            //  -   `head` was allocated by `store`.
             //  -   `head` is still valid.
-            let value = unsafe { Self::resolve_value(head, storage) };
+            let value = unsafe { Self::resolve_value(head, store) };
 
             return Some(value);
         }
@@ -393,10 +393,10 @@ where
                 let Some(next) = node.links().get(level) else { break };
 
                 //  Safety:
-                //  -   `next` was allocated by `storage.`
+                //  -   `next` was allocated by `store.`
                 //  -   `next` is still valid, since apart from `head`, only valid handles are kept.
                 //  -   `next` is associated to block of memory containing a live instance of `NodeHeader`.
-                let next_node = unsafe { next.resolve(storage) };
+                let next_node = unsafe { next.resolve(store) };
 
                 if *key > next_node.key {
                     node = next_node;
@@ -405,9 +405,9 @@ where
 
                 if *key == next_node.key {
                     //  Safety:
-                    //  -   `next` was allocated by `storage`.
+                    //  -   `next` was allocated by `store`.
                     //  -   `next` is still valid.
-                    let value = unsafe { Self::resolve_value(*next, storage) };
+                    let value = unsafe { Self::resolve_value(*next, store) };
 
                     return Some(value);
                 }
@@ -446,17 +446,17 @@ where
 
     //  Creates a node with `number_links` links, returning a handle to the node and an array of dangling links.
     #[allow(clippy::new_ret_no_self, clippy::type_complexity)]
-    fn new<S>(key: K, value: V, number_links: usize, storage: &S) -> (NodeHandle<K, V, H>, &mut [NodeHandle<K, V, H>])
+    fn new<S>(key: K, value: V, number_links: usize, store: &S) -> (NodeHandle<K, V, H>, &mut [NodeHandle<K, V, H>])
     where
-        S: Storage<Handle = H>,
+        S: Store<Handle = H>,
     {
         let (layout, offset) = Self::layout(number_links);
 
-        let (handle, _) = storage.allocate(layout).expect("Allocation to succeed.");
+        let (handle, _) = store.allocate(layout).expect("Allocation to succeed.");
 
         //  Safety:
-        //  -   `handle` was allocated by `storage`, and is still valid.
-        let pointer = unsafe { storage.resolve(handle) };
+        //  -   `handle` was allocated by `store`, and is still valid.
+        let pointer = unsafe { store.resolve(handle) };
 
         {
             let number_links: u8 = number_links.try_into().expect("number_links to be sufficiently small");
@@ -487,7 +487,7 @@ where
             //  Safety:
             //  -   `link` is valid for writes.
             //  -   `link` is properly aligned.
-            unsafe { ptr::write(link, NodeHandle::dangling(storage)) };
+            unsafe { ptr::write(link, NodeHandle::dangling(store)) };
         }
 
         //  Safety:
@@ -502,7 +502,7 @@ where
 
     //  #   Safety
     //
-    //  -   `handle` must have been allocated by `storage`.
+    //  -   `handle` must have been allocated by `store`.
     //  -   `handle` must still be valid.
     //  -   No other reference to its block of memory is active.
     //  -   `old_number_links` must match the previous number of links.
@@ -512,29 +512,29 @@ where
         with: NodeHandle<K, V, H>,
         old_number_links: usize,
         new_number_links: usize,
-        storage: &S,
+        store: &S,
     ) -> NodeHandle<K, V, H>
     where
-        S: Storage<Handle = H>,
+        S: Store<Handle = H>,
     {
         let (old_layout, offset) = Self::layout(old_number_links);
         let (new_layout, _) = Self::layout(new_number_links);
 
         //  Safety:
-        //  -   `handle` has been allocated by `storage`.
+        //  -   `handle` has been allocated by `store`.
         //  -   `handle` is still valid.
         //  -   No other reference to its block of memory is active.
         //  -   `old_layout` fits the block of memory associated with `handle`.
         //  -   `new_layout` is greater than `old_layout`.
         let (handle, _) = unsafe {
-            storage
+            store
                 .grow(handle.to_raw_parts().0, old_layout, new_layout)
                 .expect("Allocation to succeed")
         };
 
         //  Safety:
-        //  -   `handle` was allocated by `storage`, and is still valid.
-        let pointer = unsafe { storage.resolve(handle) };
+        //  -   `handle` was allocated by `store`, and is still valid.
+        let pointer = unsafe { store.resolve(handle) };
 
         {
             //  Safety:
@@ -568,20 +568,20 @@ where
 
     //  #   Safety
     //
-    //  -   `handle` must have been allocated by `storage`.
+    //  -   `handle` must have been allocated by `store`.
     //  -   `handle` must still be valid.
     //  -   `handle` must be associated to a block of memory containing a live instance of `NodeHeader`.
     //  -   No other reference to its block of memory is active.
-    unsafe fn deallocate<S>(mut handle: NodeHandle<K, V, H>, storage: &S) -> (K, V)
+    unsafe fn deallocate<S>(mut handle: NodeHandle<K, V, H>, store: &S) -> (K, V)
     where
-        S: Storage<Handle = H>,
+        S: Store<Handle = H>,
     {
         //  Safety:
-        //  -   `handle` was allocated by `storage`, and is still valid, as per pre-conditions.
+        //  -   `handle` was allocated by `store`, and is still valid, as per pre-conditions.
         //  -   `handle` is associated to a block of memory containing a live instance of `NodeHeader`, as per
         //      pre-conditions.
         //  -   No other reference to its block of memory is active, as per pre-conditions.
-        let this = unsafe { handle.resolve_mut(storage) };
+        let this = unsafe { handle.resolve_mut(store) };
 
         //  Safety:
         //  -   `this.key` and `this.value` are valid for reads.
@@ -594,10 +594,10 @@ where
         let (layout, _) = Self::layout(number_links);
 
         //  Safety:
-        //  -   `handle` was allocated by `storage`.
+        //  -   `handle` was allocated by `store`.
         //  -   `handle` is still valid.
         //  -   `layout` fits the block of memory.
-        unsafe { storage.deallocate(handle.to_raw_parts().0, layout) };
+        unsafe { store.deallocate(handle.to_raw_parts().0, layout) };
 
         (key, value)
     }
