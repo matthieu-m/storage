@@ -798,6 +798,32 @@ the companion repository showcases how building upon this `StoreBox` gains the a
 a topic for another RFC, however.
 
 
+##  (Medium) What trait should the store have, for `Clone`?
+
+In the standard library, a `Box` or a `Vec` are clone-able if the allocator implements `Clone`. It is certainly possible
+to copy this bound for `Store`, but the semantics feel _wrong_ to me.
+
+If one clones a `Vec`, the expectation is that the new `Vec` is indistinguishable from the old `Vec` value-wise. On the
+other hand, in cloning a `Store` or an `Allocator` the expectation is that the clone be _empty_, and _independent_ from
+the original. Most notably, there is not guarantee that a handle or a pointer allocated by the original can be used
+safely with the clone. This... doesn't sound like a clone to me.
+
+`Default` feels like a more appropriate bound, in this sense. It is expected that a `Default` instance of a type be
+empty and independent from other instances.
+
+`Default` does have the issue that it may not mesh well with `dyn Store` or `dyn Allocator` for that matter, however.
+While `Clone` can reasonably be implemented for `&dyn Store`, or `Rc<dyn Store>`, such is not the case for `Default`.
+
+This leaves 4 possibilities:
+
+-   Use `Clone` despite the poor semantics match.
+-   Use `Default` despite it being at odds with `dyn Store` use.
+-   Add a new `SpawningStore` trait to create an independent instance, though mixing several non-empty traits in a `dyn`
+    context is not supported yet.
+-   Add a method to `Store` to create an independent instance, fixing the semantics of `Clone`. Possibly a faillible
+    one.
+
+
 ##  (Minor) What should the capabilities of `Handle` be?
 
 Since any capability specified in the associated type definition is "mandatory", I am of the opinion that it should be
