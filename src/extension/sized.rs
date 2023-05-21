@@ -1,27 +1,27 @@
-//! Typed handle, for bonus type safety.
+//! Typed handle specialized for Sized types.
+//!
+//! There are some type inference issues with TypedHandle related to the use of `Pointee::Metadata` that this type
+//! doesn't run into.
 
 use core::{
     alloc::{AllocError, Layout},
-    marker::Unsize,
+    marker::PhantomData,
     ptr::{self, NonNull},
 };
 
-#[cfg(feature = "coercible-metadata")]
-use core::ops::CoerceUnsized;
-
-use crate::{extension::typed_metadata::TypedMetadata, interface::Store};
+use crate::interface::Store;
 
 /// Arbitrary typed handle, for type safety, and coercion.
 ///
 /// A typed handle may be invalid, either because it was created dangling, or because it became invalid following an
 /// operation on the store that allocated it. It is the responsibility of the user to ensure that the typed handle
 /// is valid when necessary.
-pub struct TypedHandle<T: ?Sized, H> {
+pub struct SizedHandle<T, H> {
     handle: H,
-    metadata: TypedMetadata<T>,
+    _marker: PhantomData<fn(T) -> T>,
 }
 
-impl<T, H: Copy> TypedHandle<T, H> {
+impl<T, H: Copy> SizedHandle<T, H> {
     /// Creates a dangling handle.
     #[inline(always)]
     pub fn dangling<S>(store: &S) -> Self
@@ -29,9 +29,9 @@ impl<T, H: Copy> TypedHandle<T, H> {
         S: Store<Handle = H>,
     {
         let handle = store.dangling();
-        let metadata = TypedMetadata::default();
+        let _marker = PhantomData;
 
-        Self { handle, metadata }
+        Self { handle, _marker }
     }
 
     /// Creates a new handle, pointing to a `T`.
@@ -55,9 +55,9 @@ impl<T, H: Copy> TypedHandle<T, H> {
         //  -   `pointer` has exclusive access to the memory area it points to.
         unsafe { ptr::write(pointer.cast().as_ptr(), value) };
 
-        let metadata = TypedMetadata::default();
+        let _marker = PhantomData;
 
-        Ok(Self { handle, metadata })
+        Ok(Self { handle, _marker })
     }
 
     /// Allocates a new handle, with enough space for `T`.
@@ -71,9 +71,9 @@ impl<T, H: Copy> TypedHandle<T, H> {
         S: Store<Handle = H>,
     {
         let (handle, _) = store.allocate(Layout::new::<T>())?;
-        let metadata = TypedMetadata::default();
+        let _marker = PhantomData;
 
-        Ok(Self { handle, metadata })
+        Ok(Self { handle, _marker })
     }
 
     /// Allocates a new handle, with enough space for `T`.
@@ -87,27 +87,9 @@ impl<T, H: Copy> TypedHandle<T, H> {
         S: Store<Handle = H>,
     {
         let (handle, _) = store.allocate_zeroed(Layout::new::<T>())?;
-        let metadata = TypedMetadata::default();
+        let _marker = PhantomData;
 
-        Ok(Self { handle, metadata })
-    }
-}
-
-impl<T: ?Sized, H: Copy> TypedHandle<T, H> {
-    /// Creates a handle from raw parts.
-    ///
-    /// -   If `handle` is valid, and associated to a block of memory which fits an instance of `T`, then the resulting
-    ///     typed handle is valid.
-    /// -   If `handle` is invalid, then the resulting typed handle is invalid.
-    /// -   If `handle` is valid and `metadata` does not fit the block of memory associated with it, then the resulting
-    ///     typed handle is invalid.
-    pub fn from_raw_parts(handle: H, metadata: TypedMetadata<T>) -> Self {
-        Self { handle, metadata }
-    }
-
-    /// Decomposes a (possibly wide) pointer into its (raw) handle and metadata components.
-    pub fn to_raw_parts(self) -> (H, TypedMetadata<T>) {
-        (self.handle, self.metadata)
+        Ok(Self { handle, _marker })
     }
 
     /// Deallocates the memory associated with the handle.
@@ -220,143 +202,14 @@ impl<T: ?Sized, H: Copy> TypedHandle<T, H> {
         //  -   `self.handle` is still valid, as per pre-conditions.
         let pointer = unsafe { store.resolve(self.handle) };
 
-        NonNull::from_raw_parts(pointer.cast(), self.metadata.get())
-    }
-
-    /// Coerces the handle into another.
-    ///
-    /// If `self` is valid, the resulting typed handle is valid; otherwise it is invalid.
-    #[inline(always)]
-    pub fn coerce<U: ?Sized>(&self) -> TypedHandle<U, H>
-    where
-        T: Unsize<U>,
-    {
-        let metadata = self.metadata.coerce();
-
-        TypedHandle {
-            handle: self.handle,
-            metadata,
-        }
+        pointer.cast()
     }
 }
 
-impl<T, H: Copy> TypedHandle<[T], H> {
-    /// Returns whether the memory area associated to `self` may not contain any element.
-    pub fn is_empty(&self) -> bool {
-        self.metadata.get() == 0
-    }
-
-    /// Returns the number of elements the memory area associated to `self` may contain.
-    pub fn len(&self) -> usize {
-        self.metadata.get()
-    }
-
-    /// Grows the block of memory associated with the handle.
-    ///
-    /// On success, all the copies of the handle are invalidated, and the extra memory is left uninitialized. On
-    /// failure, an error is returned.
-    ///
-    /// #   Safety
-    ///
-    /// -   `self` must have been allocated by `store`.
-    /// -   `self` must still be valid.
-    /// -   `new_size` must be greater than or equal to `self.len()`.
-    pub unsafe fn grow<S>(&mut self, new_size: usize, store: &S) -> Result<(), AllocError>
-    where
-        S: Store<Handle = H>,
-    {
-        debug_assert!(new_size >= self.len());
-
-        let (old_layout, _) = Layout::new::<T>().repeat(self.len()).map_err(|_| AllocError)?;
-        let (new_layout, _) = Layout::new::<T>().repeat(new_size).map_err(|_| AllocError)?;
-
-        //  Safety:
-        //  -   `self.handle` was allocated by `store`, as per pre-conditions.
-        //  -   `self.handle` is still valid, as per pre-conditions.
-        //  -   `old_layout` fits the block of memory associated to `self.handle`, by construction.
-        //  -   `new_layout`'s size is greater than or equal to the size of `old_layout`, as per pre-conditions.
-        let (handle, _) = unsafe { store.grow(self.handle, old_layout, new_layout)? };
-
-        self.handle = handle;
-
-        self.metadata = TypedMetadata::new(new_size);
-
-        Ok(())
-    }
-
-    /// Grows the block of memory associated with the handle.
-    ///
-    /// On success, all the copies of the handle are invalidated, and the extra memory is zeroed. On failure, an error
-    /// is returned.
-    ///
-    /// #   Safety
-    ///
-    /// -   `self` must have been allocated by `store`.
-    /// -   `self` must still be valid.
-    /// -   `new_size` must be greater than or equal to `self.len()`.
-    pub unsafe fn grow_zeroed<S>(&mut self, new_size: usize, store: &S) -> Result<(), AllocError>
-    where
-        S: Store<Handle = H>,
-    {
-        debug_assert!(new_size >= self.len());
-
-        let (old_layout, _) = Layout::new::<T>().repeat(self.len()).map_err(|_| AllocError)?;
-        let (new_layout, _) = Layout::new::<T>().repeat(new_size).map_err(|_| AllocError)?;
-
-        //  Safety:
-        //  -   `self.handle` was allocated by `store`, as per pre-conditions.
-        //  -   `self.handle` is still valid, as per pre-conditions.
-        //  -   `old_layout` fits the block of memory associated to `self.handle`, by construction.
-        //  -   `new_layout`'s size is greater than or equal to the size of `old_layout`, as per pre-conditions.
-        let (handle, _) = unsafe { store.grow_zeroed(self.handle, old_layout, new_layout)? };
-
-        self.handle = handle;
-
-        self.metadata = TypedMetadata::new(new_size);
-
-        Ok(())
-    }
-
-    /// Shrinks the block of memory associated with the handle.
-    ///
-    /// On success, all the copies of the handle are invalidated. On failure, an error is returned.
-    ///
-    /// #   Safety
-    ///
-    /// -   `self` must have been allocated by `store`.
-    /// -   `self` must still be valid.
-    /// -   `new_size` must be less than or equal to `self.len()`.
-    pub unsafe fn shrink<S>(&mut self, new_size: usize, store: &S) -> Result<(), AllocError>
-    where
-        S: Store<Handle = H>,
-    {
-        debug_assert!(new_size <= self.len());
-
-        let (old_layout, _) = Layout::new::<T>().repeat(self.len()).map_err(|_| AllocError)?;
-        let (new_layout, _) = Layout::new::<T>().repeat(new_size).map_err(|_| AllocError)?;
-
-        //  Safety:
-        //  -   `self.handle` was allocated by `store`, as per pre-conditions.
-        //  -   `self.handle` is still valid, as per pre-conditions.
-        //  -   `old_layout` fits the block of memory associated to `self.handle`, by construction.
-        //  -   `new_layout`'s size is less than or equal to the size of `old_layout`, as per pre-conditions.
-        let (handle, _) = unsafe { store.shrink(self.handle, old_layout, new_layout)? };
-
-        self.handle = handle;
-
-        self.metadata = TypedMetadata::new(new_size);
-
-        Ok(())
-    }
-}
-
-impl<T: ?Sized, H: Copy> Clone for TypedHandle<T, H> {
+impl<T, H: Copy> Clone for SizedHandle<T, H> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<T: ?Sized, H: Copy> Copy for TypedHandle<T, H> {}
-
-#[cfg(feature = "coercible-metadata")]
-impl<T, U: ?Sized, H: Copy> CoerceUnsized<TypedHandle<U, H>> for TypedHandle<T, H> where T: Unsize<U> {}
+impl<T, H: Copy> Copy for SizedHandle<T, H> {}

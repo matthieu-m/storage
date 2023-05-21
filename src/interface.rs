@@ -248,8 +248,41 @@ pub unsafe trait StableStore: Store {}
 /// #   Safety
 ///
 /// Implementers of this trait must guarantee that a handle always resolve to the same block of memory for as long as
-/// it is valid.
+/// it is valid, in particular even after the instance of `Store` was moved.
+///
+/// As a corrolary, forgetting the instance of `Store` -- which is moving without dropping -- means that the resolved
+/// pointers will remain valid until, somehow, the instance of `Store` is recovered (from scratch) and dropped.
 pub unsafe trait PinningStore: StableStore {}
+
+/// A refinement of `Store` which allows multiple instances to share the handles and their associated blocks of memory.
+///
+/// Normally, a handle created by one instance of `Store` cannot be used in any way with another, different, instance of
+/// `Store`. This trait lifts this restriction _partly_ by created sets of sharing stores. In essence, all stores
+/// belonging to the same set of sharing stores can be considered "parts" of a single store: all handles created by one
+/// "part" can be used with any other "part", and the store is not dropped until all its "parts" are dropped.
+///
+/// A set of sharing stores is effectively the morale equivalent of a `Rc<Store>` or `Arc<Store>`.
+///
+/// #   Safety
+///
+/// Implementers of this trait must guarantee that a handle created by one part of a sharing set may be used with any
+/// other part: resolved, deallocated, grown, or shrunk.
+pub unsafe trait SharingStore: PinningStore {
+    /// Error returned if sharing is not currently possible.
+    type SharingError;
+
+    /// Returns whether two instances belong to the same sharing set.
+    ///
+    /// The implementation is permitted to return `false` even if the two instances do, indeed, belong to the same
+    /// sharing set. This method is only meant to allow users who lost track of whether the implementations are sharing
+    /// to possibly recover this piece of information.
+    fn is_sharing_with(&self, other: &Self) -> bool;
+
+    /// Creates a new instance of `Store` belonging to the same sharing set as `self`.
+    fn share(&self) -> Result<Self, Self::SharingError>
+    where
+        Self: Sized;
+}
 
 //
 //  Provided for convenience.

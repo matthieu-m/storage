@@ -11,6 +11,9 @@ categories = ["no-std"]
 
 [features]
 default = []
+#   Enables integration with the alloc crate.
+alloc = []
+#   Enables CoerceUnsized for Box, by using a placeholder implementation.
 coercible-metadata = []
 
 [dependencies]

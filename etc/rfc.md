@@ -878,6 +878,41 @@ On the other hand, those two methods guarantee:
 And that's pretty good, given how straightforward the code is.
 
 
+##  SharingStore
+
+One (other) underdevelopped aspect of the `Allocator` API at the moment is the handling of fungibility of pointers, that
+is the description -- in trait -- of whether a pointer allocated by one `Allocator` can be grown, shrunk, or deallocated
+by another instance of `Allocator`. The immediate consequence is that `Rc` is only `Clone` for `Global`, and the
+`LinkedList::append` and `LinkedList::split_off` methods are similarly only available for `Global` allocator.
+
+A possible future extension for the Storage proposal is the introduction of the `SharingStore` trait:
+
+```rust
+trait SharingStore: PinningStore {
+    type SharingError;
+
+    fn is_sharing_with(&self, other: &Self) -> bool;
+
+    fn share(&self) -> Result<Self, Self::SharingError> where Self: Sized;
+}
+```
+
+This trait introduces the concept of set of sharing stores, that is when multiple stores share the same "backing" memory
+and allocation metadata.
+
+The `share` method creates a new instance of the store which shares the same "backing" memory and metadata as `self`,
+while the `is_sharing_with` method allows querying whether two stores share the same "backing" memory and metadata.
+
+A set of sharing stores can be thought of as a single store instance: handles created by one of the stores can be used
+with any of the stores of the set, in any way, and as long as one store of the set has not been dropped, dropping a
+store of the set does not invalidate the handles. Informally, the "backing" memory and metadata can be thought of as
+being reference-counted.
+
+The requirement of `PinningStore` is necessary as moving any one instance should not invalidate the pointers resolved by
+other instances of the set, and the `SharingError` type allows modelling potentially-sharing stores, such as a small
+store which cannot be shared if its handles currently point to inline memory.
+
+
 ##  Compact Vectors
 
 How far should DRY go?

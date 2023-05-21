@@ -12,18 +12,24 @@
 #![feature(allocator_api)]
 #![feature(alloc_layout_extra)]
 #![feature(coerce_unsized)]
+#![feature(hasher_prefixfree_extras)]
 #![feature(layout_for_ptr)]
 #![feature(maybe_uninit_write_slice)]
 #![feature(offset_of)]
+#![feature(never_type)]
 #![feature(ptr_as_uninit)]
 #![feature(ptr_metadata)]
 #![feature(slice_ptr_get)]
 #![feature(specialization)]
 #![feature(unsize)]
+#![feature(unwrap_infallible)]
 //  Lints
 #![deny(missing_docs)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![allow(incomplete_features)] //  For specialization.
+
+#[cfg(feature = "alloc")]
+extern crate alloc;
 
 pub mod collection;
 pub mod extension;

@@ -5,7 +5,13 @@ use core::{
     ptr::NonNull,
 };
 
+#[cfg(feature = "alloc")]
+use alloc::alloc::Global;
+
 use crate::interface::{MultipleStore, PinningStore, StableStore, Store};
+
+#[cfg(feature = "alloc")]
+use crate::interface::SharingStore;
 
 unsafe impl<A> Store for A
 where
@@ -97,3 +103,18 @@ unsafe impl<A> StableStore for A where A: Allocator {}
 //  Safety:
 //  -   `Allocator` allocations are pinned.
 unsafe impl<A> PinningStore for A where A: Allocator {}
+
+//  Safety:
+//  -   `Allocator` are always sharing, today.
+#[cfg(feature = "alloc")]
+unsafe impl SharingStore for Global {
+    type SharingError = !;
+
+    fn is_sharing_with(&self, _other: &Self) -> bool {
+        true
+    }
+
+    fn share(&self) -> Result<Self, Self::SharingError> {
+        Ok(*self)
+    }
+}

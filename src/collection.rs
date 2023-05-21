@@ -4,6 +4,7 @@
 //! `Store` trait, rather than providing fully implemented collections -- for now.
 
 mod concurrent_vec;
+mod linked_list;
 mod skip_list;
 mod store_box;
 
@@ -11,5 +12,6 @@ mod store_box;
 mod utils;
 
 pub use concurrent_vec::ConcurrentVec;
+pub use linked_list::LinkedList;
 pub use skip_list::SkipList;
 pub use store_box::StoreBox;
