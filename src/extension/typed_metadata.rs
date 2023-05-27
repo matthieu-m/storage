@@ -12,17 +12,30 @@ mod implementation {
     };
 
     /// Typed Metadata, for type-safe APIs.
-    pub struct TypedMetadata<T: ?Sized>(<T as Pointee>::Metadata);
+    pub struct TypedMetadata<T: ?Sized> {
+        metadata: <T as Pointee>::Metadata,
+        //  Work-around for https://github.com/rust-lang/rust/issues/111821.
+        //
+        //  rustc fails to realize that `Pointee::Metadata` is always `Sized`, which in case of cycles may lead it to
+        //  erroneously reject a program due to use of a possible `!Sized` type for a non-last field.
+        _self_is_always_sized: (),
+    }
 
     impl<T: ?Sized> TypedMetadata<T> {
         /// Creates a new Typed metadata.
         pub fn new(metadata: <T as Pointee>::Metadata) -> Self {
-            Self(metadata)
+            #[allow(clippy::let_unit_value)]
+            let _self_is_always_sized = ();
+
+            Self {
+                metadata,
+                _self_is_always_sized,
+            }
         }
 
         /// Retrieves the metadata.
         pub fn get(&self) -> <T as Pointee>::Metadata {
-            self.0
+            self.metadata
         }
 
         /// Coerces the metadata into another.
@@ -30,11 +43,17 @@ mod implementation {
         where
             T: Unsize<U>,
         {
-            let pointer: *const T = ptr::from_raw_parts(ptr::null(), self.0);
+            let pointer: *const T = ptr::from_raw_parts(ptr::null(), self.metadata);
             let pointer: *const U = pointer as *const _;
             let (_, metadata) = pointer.to_raw_parts();
 
-            TypedMetadata(metadata)
+            #[allow(clippy::let_unit_value)]
+            let _self_is_always_sized = ();
+
+            TypedMetadata {
+                metadata,
+                _self_is_always_sized,
+            }
         }
     }
 } // mod implementation

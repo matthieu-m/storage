@@ -5,7 +5,7 @@
 use core::{alloc::AllocError, cmp, fmt, hash, mem, ptr};
 
 use crate::{
-    extension::sized::SizedHandle,
+    extension::typed::TypedHandle,
     interface::{MultipleStore, SharingStore, StableStore, Store},
 };
 
@@ -217,7 +217,7 @@ impl<T, S: MultipleStore> LinkedList<T, S> {
             next: self.head,
             prev: NodeHandle::dangling(&self.store),
         };
-        let handle = SizedHandle::new(node, &self.store)?;
+        let handle = TypedHandle::new(node, &self.store)?;
 
         self.head = handle;
 
@@ -237,7 +237,7 @@ impl<T, S: MultipleStore> LinkedList<T, S> {
             next: NodeHandle::dangling(&self.store),
             prev: self.tail,
         };
-        let handle = SizedHandle::new(node, &self.store)?;
+        let handle = TypedHandle::new(node, &self.store)?;
 
         if !self.is_empty() {
             //  Safety:
@@ -743,7 +743,7 @@ impl<'a, T: 'a, S: StableStore> DoubleEndedIterator for IterMut<'a, T, S> {
 //  Implementation
 //
 
-type NodeHandle<T, H> = SizedHandle<Node<T, H>, H>;
+type NodeHandle<T, H> = TypedHandle<Node<T, H>, H>;
 
 struct Node<T, H> {
     element: T,

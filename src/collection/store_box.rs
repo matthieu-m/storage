@@ -59,7 +59,7 @@ impl<T: Clone, S: Store + Default> Clone for StoreBox<T, S> {
 
     fn clone_from(&mut self, source: &StoreBox<T, S>) {
         let dest: &mut T = self;
-        let source: &T = &source;
+        let source: &T = source;
 
         dest.clone_from(source);
     }
@@ -234,12 +234,12 @@ mod test_allocator {
 
     #[test]
     fn sized_failure() {
-        StoreBox::new_in(1, NonAllocator::default()).unwrap_err();
+        StoreBox::new_in(1, NonAllocator).unwrap_err();
     }
 
     #[test]
     fn sized_allocated() {
-        let mut boxed = StoreBox::new_in(1, System::default()).unwrap();
+        let mut boxed = StoreBox::new_in(1, System).unwrap();
 
         assert_eq!(1u32, *boxed);
 
@@ -257,12 +257,12 @@ mod test_allocator {
 
     #[test]
     fn slice_failure() {
-        StoreBox::new_in([1u8, 2, 3], NonAllocator::default()).unwrap_err();
+        StoreBox::new_in([1u8, 2, 3], NonAllocator).unwrap_err();
     }
 
     #[test]
     fn slice_allocated() {
-        let boxed = StoreBox::new_in([1u8, 2, 3], System::default()).unwrap();
+        let boxed = StoreBox::new_in([1u8, 2, 3], System).unwrap();
         let mut boxed: StoreBox<[u8], _> = StoreBox::coerce(boxed);
 
         assert_eq!([1u8, 2, 3], &*boxed);
@@ -275,7 +275,7 @@ mod test_allocator {
     #[cfg(feature = "coercible-metadata")]
     #[test]
     fn slice_coercion() {
-        let boxed = StoreBox::new_in([1u8, 2, 3], System::default()).unwrap();
+        let boxed = StoreBox::new_in([1u8, 2, 3], System).unwrap();
         let mut boxed: StoreBox<[u8], _> = boxed;
 
         assert_eq!([1u8, 2, 3], &*boxed);
@@ -287,12 +287,12 @@ mod test_allocator {
 
     #[test]
     fn trait_failure() {
-        StoreBox::new_in([1u8, 2, 3], NonAllocator::default()).unwrap_err();
+        StoreBox::new_in([1u8, 2, 3], NonAllocator).unwrap_err();
     }
 
     #[test]
     fn trait_allocated() {
-        let boxed = StoreBox::new_in([1u8, 2, 3], System::default()).unwrap();
+        let boxed = StoreBox::new_in([1u8, 2, 3], System).unwrap();
         let boxed: StoreBox<dyn fmt::Debug, _> = StoreBox::coerce(boxed);
 
         assert_eq!("StoreBox([1, 2, 3])", format!("{:?}", boxed));
@@ -301,7 +301,7 @@ mod test_allocator {
     #[cfg(feature = "coercible-metadata")]
     #[test]
     fn trait_coercion() {
-        let boxed = StoreBox::new_in([1u8, 2, 3], System::default()).unwrap();
+        let boxed = StoreBox::new_in([1u8, 2, 3], System).unwrap();
         let boxed: StoreBox<dyn fmt::Debug, _> = boxed;
 
         assert_eq!("StoreBox([1, 2, 3])", format!("{:?}", boxed));
