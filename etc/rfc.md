@@ -22,8 +22,8 @@ Specifically:
 
 -   Pointers preclude in-line memory store, ie, an allocator cannot return a pointer pointing within the allocator
     itself, as any move of the allocator instance invalidates the pointer.
--   Pointers (other than null, dangling, or to static variables) cannot be returned from a const context, preventing the
-    use of non-empty regular collections in const or static variables.
+-   Pointers to allocated memory cannot be returned from a const context, preventing the use of non-empty regular
+    collections in const or static variables.
 -   Pointers are often virtual addresses, preventing the use of non-empty regular collections in shared memory.
 -   Pointers are often 32 to 64 bits, which is overkill in many situations.
 
@@ -41,8 +41,8 @@ internally use the store provided, and its handles, to allocate and deallocate m
 
 The `Store` API is very closely related to the `Allocator` API, and largely mirrors it. The important exceptions are:
 
--   The `Handle` returned are opaque, and must be resolved into pointers by the instance of `Store` which allocated
-    them.
+-   The `Handle` returned is opaque, and must be resolved into pointers by the instance of `Store` which allocated it,
+    in general.
 -   Unless a specific store type implements `MultipleStore`, any handle it allocated may be invalidated when the store
     performs a new allocation.
 -   Unless a specific store type implements `StableStore`, there is no guarantee that resolving the same handle after
@@ -439,6 +439,8 @@ This RFC introduces 4 new traits.
 The core of this RFC is the `Store` trait:
 
 ```rust
+/// Allocates and deallocates handles to blocks of memory, which can be temporarily resolved to pointers to actually
+/// access said memory.
 pub unsafe trait Store {
     /// Handle to a block of memory.
     type Handle: Copy;
@@ -449,7 +451,7 @@ pub unsafe trait Store {
     /// Return a pointer to the block of memory associated to `handle`.
     unsafe fn resolve(&self, handle: Self::Handle) -> NonNull<u8>;
 
-    //  The following methods are similar to `Allocate`, reformulated in terms of `Self::Handle`.
+    //  The following methods are similar to `Allocator`, reformulated in terms of `Self::Handle`.
 
     /// Allocates a new handle to a block of memory. On success, invalidates any existing handle.
     fn allocate(&self, layout: Layout) -> Result<(Self::Handle, usize), AllocError>;
@@ -554,7 +556,7 @@ comings today is presented here:
 -   https://crates.io/crates/string-wrapper
 -   https://crates.io/crates/toad-string
 
-Those are the alternatives to `Store`: rather than adapting a data-structure to be flexible enough to be used in various
+Those are the alternatives to `Store`: rather than adapting a data-structure flexible enough to be used in various
 situations, the entire data-structure is copy/pasted and then tweaked as necessary or re-implemented. The downsides are
 inherent to any violation of DRY:
 
@@ -565,7 +567,7 @@ inherent to any violation of DRY:
 
 There are a few advantages to brand new types. For example, a nul-terminated in-line string does not have the 16 bytes
 overhead that a "naive" `String<InlineSingleStore<[u8; N]>>` would have. The Store API will not eliminate the potential
-need for such specialized collections, but it may eliminate the need for many alternatives.
+need for such specialized collections, but it may eliminate the need for most alternatives in most situations.
 
 
 ##  Allocator-like
@@ -798,21 +800,22 @@ the companion repository showcases how building upon this `StoreBox` gains the a
 a topic for another RFC, however.
 
 
-##  (Medium) What trait should the store have, for `Clone`?
+##  (Medium) To `Clone`, to `Default`?
 
-In the standard library, a `Box` or a `Vec` are clone-able if the allocator implements `Clone`. It is certainly possible
-to copy this bound for `Store`, but the semantics feel _wrong_ to me.
+The _Safety_ section of the [`Allocator`](https://doc.rust-lang.org/nightly/std/alloc/trait.Allocator.html#safety)
+documentation notes that a `Clone` of an `Allocator` must be interchangeable with the original, and that all allocated
+pointers must remain until the last of the clones or copies of the allocator is dropped.
 
-If one clones a `Vec`, the expectation is that the new `Vec` is indistinguishable from the old `Vec` value-wise. On the
-other hand, in cloning a `Store` or an `Allocator` the expectation is that the clone be _empty_, and _independent_ from
-the original. Most notably, there is not guarantee that a handle or a pointer allocated by the original can be used
-safely with the clone. This... doesn't sound like a clone to me.
+The standard library then proceed to require `A: Allocator + Clone` to clone a `Box` or a `Vec`, when arguably it is not
+necessary to have an interchangeable allocator, and instead _semantically_ an independent allocator is required.
 
-`Default` feels like a more appropriate bound, in this sense. It is expected that a `Default` instance of a type be
-empty and independent from other instances.
+This RFC, instead, favors using the `Default` bound for the `Clone` implementation of `StoreBox`:
 
-`Default` does have the issue that it may not mesh well with `dyn Store` or `dyn Allocator` for that matter, however.
-While `Clone` can reasonably be implemented for `&dyn Store`, or `Rc<dyn Store>`, such is not the case for `Default`.
+1.  It matches the desired semantics better -- a brand new store is required, not an interchangeable one.
+2.  A cloneable `InlineStore` cannot match the semantics of `Clone` required of Allocators.
+
+`Default` does have the issue that it may not mesh well with `dyn Store` or `dyn Allocator`, and while `Clone` can
+reasonably be implemented for `&dyn Store`, or `Rc<dyn Store>`, such is not the case for `Default`.
 
 This leaves 4 possibilities:
 
@@ -822,6 +825,32 @@ This leaves 4 possibilities:
     context is not supported yet.
 -   Add a method to `Store` to create an independent instance, fixing the semantics of `Clone`. Possibly a faillible
     one.
+
+Note that technically switching from the `Clone` bound to another bound for `Box` and `Vec` is a breaking change,
+however since `Allocator` is an unstable API it is still early enough to effect such change.
+
+
+##  (Minor) To `Clone` or to share?
+
+As mentioned above, whenever an `Allocator` also implements the `Clone` trait, the clone or copy of the `Allocator` must
+fulfill specific requirements. In particular, all clones or copies of a given allocator behave as a single allocator
+sharing the backing memory and metadata. While the `Clone` trait does fit _creating_ a new clone/copy of an allocator,
+it is insufficient however to _query_ whether another instance is a clone/copy of a given allocator.
+
+The standard library runs headlong into this insufficience, and while `LinkedList::split_off` is implemented for any
+`Allocator` which also implements `Clone`, `LinkedList::append` is only implemented for `Global`.
+
+There are at least 2 possibilities, here:
+
+-   Add a requirement on `PartialEq` implementation for `Allocator` and `Store` that comparing equal means that they are
+    clones or copies of each others.
+-   Add a separate `SharingStore` trait -- see future possibilities.
+
+It should be noted that `dyn` usage of `Allocator` and `Store` suffers from the requirement of using unrelated traits as
+it is not possible to have a `dyn Allocator + Clone + PartialEq` trait today, though those traits can be implemented for
+`&dyn Allocator` or `Rc<dyn Allocator>`.
+
+Given that the problem is unsolved for `Allocator`, it can be punted on in the context of this RFC.
 
 
 ##  (Minor) What should the capabilities of `Handle` be?
@@ -854,6 +883,41 @@ would still be possible to initialize the instance of `Store` with a random seed
 
 
 #   Future Possibilities
+
+##  SharingStore
+
+One (other) underdevelopped aspect of the `Allocator` API at the moment is the handling of fungibility of pointers, that
+is the description -- in trait -- of whether a pointer allocated by one `Allocator` can be grown, shrunk, or deallocated
+by another instance of `Allocator`. The immediate consequence is that `Rc` is only `Clone` for `Global`, and the
+`LinkedList::append` and `LinkedList::split_off` methods are similarly only available for `Global` allocator.
+
+A possible future extension for the Storage proposal is the introduction of the `SharingStore` trait:
+
+```rust
+trait SharingStore: PinningStore {
+    type SharingError;
+
+    fn is_sharing_with(&self, other: &Self) -> bool;
+
+    fn share(&self) -> Result<Self, Self::SharingError> where Self: Sized;
+}
+```
+
+This trait introduces the concept of set of sharing stores, that is when multiple stores share the same "backing" memory
+and allocation metadata.
+
+The `share` method creates a new instance of the store which shares the same "backing" memory and metadata as `self`,
+while the `is_sharing_with` method allows querying whether two stores share the same "backing" memory and metadata.
+
+A set of sharing stores can be thought of as a single store instance: handles created by one of the stores can be used
+with any of the stores of the set, in any way, and as long as one store of the set has not been dropped, dropping a
+store of the set does not invalidate the handles. Informally, the "backing" memory and metadata can be thought of as
+being reference-counted.
+
+The requirement of `PinningStore` is necessary as moving any one instance should not invalidate the pointers resolved by
+other instances of the set, and the `SharingError` type allows modelling potentially-sharing stores, such as a small
+store which cannot be shared if its handles currently point to inline memory.
+
 
 ##  TypedHandle
 
@@ -902,41 +966,6 @@ On the other hand, those two methods guarantee:
     used safely.
 
 And that's pretty good, given how straightforward the code is.
-
-
-##  SharingStore
-
-One (other) underdevelopped aspect of the `Allocator` API at the moment is the handling of fungibility of pointers, that
-is the description -- in trait -- of whether a pointer allocated by one `Allocator` can be grown, shrunk, or deallocated
-by another instance of `Allocator`. The immediate consequence is that `Rc` is only `Clone` for `Global`, and the
-`LinkedList::append` and `LinkedList::split_off` methods are similarly only available for `Global` allocator.
-
-A possible future extension for the Storage proposal is the introduction of the `SharingStore` trait:
-
-```rust
-trait SharingStore: PinningStore {
-    type SharingError;
-
-    fn is_sharing_with(&self, other: &Self) -> bool;
-
-    fn share(&self) -> Result<Self, Self::SharingError> where Self: Sized;
-}
-```
-
-This trait introduces the concept of set of sharing stores, that is when multiple stores share the same "backing" memory
-and allocation metadata.
-
-The `share` method creates a new instance of the store which shares the same "backing" memory and metadata as `self`,
-while the `is_sharing_with` method allows querying whether two stores share the same "backing" memory and metadata.
-
-A set of sharing stores can be thought of as a single store instance: handles created by one of the stores can be used
-with any of the stores of the set, in any way, and as long as one store of the set has not been dropped, dropping a
-store of the set does not invalidate the handles. Informally, the "backing" memory and metadata can be thought of as
-being reference-counted.
-
-The requirement of `PinningStore` is necessary as moving any one instance should not invalidate the pointers resolved by
-other instances of the set, and the `SharingError` type allows modelling potentially-sharing stores, such as a small
-store which cannot be shared if its handles currently point to inline memory.
 
 
 ##  Compact Vectors
