@@ -780,7 +780,7 @@ impl<T, S: Store> LinkedList<T, S> {
 }
 
 #[cfg(test)]
-mod tests {
+mod allocator_tests {
     use std::alloc::Global;
 
     use super::*;
@@ -1063,4 +1063,234 @@ mod tests {
 
         assert_eq!(r#"["0a", "1a", "2a"]"#, format!("{list:?}"));
     }
-} // mod tests
+} // mod allocator_tests
+
+#[cfg(test)]
+mod inline_bump_tests {
+    use crate::store::InlineBumpStore;
+
+    use super::*;
+
+    type InlineLinkedList<T, H, const N: usize> = LinkedList<T, InlineBumpStore<H, [Node<T, H>; N]>>;
+
+    type TestList = InlineLinkedList<String, u8, 6>;
+
+    #[test]
+    fn list_empty() {
+        let list = TestList::new();
+
+        assert!(list.is_empty());
+        assert_eq!(0, list.len());
+    }
+
+    #[test]
+    fn list_front() {
+        let mut list = TestList::new();
+
+        list.try_push_front(String::from("0")).unwrap();
+
+        assert!(!list.is_empty());
+        assert_eq!(1, list.len());
+        assert_eq!(Some("0"), list.front().map(|s| s.as_str()));
+
+        if let Some(e) = list.front_mut() {
+            e.push('1');
+        }
+
+        assert_eq!(Some("01"), list.pop_front().as_deref());
+
+        assert!(list.is_empty());
+        assert_eq!(0, list.len());
+    }
+
+    #[test]
+    fn list_front_multiple() {
+        let mut list = TestList::new();
+
+        list.try_push_front(String::from("2")).unwrap();
+        list.try_push_front(String::from("1")).unwrap();
+        list.try_push_front(String::from("0")).unwrap();
+
+        assert!(!list.is_empty());
+        assert_eq!(3, list.len());
+        assert_eq!(Some("0"), list.front().map(|s| s.as_str()));
+        assert_eq!(Some("0"), list.pop_front().as_deref());
+
+        assert!(!list.is_empty());
+        assert_eq!(2, list.len());
+        assert_eq!(Some("1"), list.front().map(|s| s.as_str()));
+        assert_eq!(Some("1"), list.pop_front().as_deref());
+
+        assert!(!list.is_empty());
+        assert_eq!(1, list.len());
+        assert_eq!(Some("2"), list.front().map(|s| s.as_str()));
+        assert_eq!(Some("2"), list.pop_front().as_deref());
+
+        assert!(list.is_empty());
+        assert_eq!(0, list.len());
+    }
+
+    #[test]
+    fn list_back() {
+        let mut list = TestList::new();
+
+        list.try_push_back(String::from("0")).unwrap();
+
+        assert!(!list.is_empty());
+        assert_eq!(1, list.len());
+        assert_eq!(Some("0"), list.back().map(|s| s.as_str()));
+
+        if let Some(e) = list.back_mut() {
+            e.push('1');
+        }
+
+        assert_eq!(Some("01"), list.pop_back().as_deref());
+
+        assert!(list.is_empty());
+        assert_eq!(0, list.len());
+    }
+
+    #[test]
+    fn list_back_multiple() {
+        let mut list = TestList::new();
+
+        list.try_push_back(String::from("2")).unwrap();
+        list.try_push_back(String::from("1")).unwrap();
+        list.try_push_back(String::from("0")).unwrap();
+
+        assert!(!list.is_empty());
+        assert_eq!(3, list.len());
+        assert_eq!(Some("0"), list.back().map(|s| s.as_str()));
+        assert_eq!(Some("0"), list.pop_back().as_deref());
+
+        assert!(!list.is_empty());
+        assert_eq!(2, list.len());
+        assert_eq!(Some("1"), list.back().map(|s| s.as_str()));
+        assert_eq!(Some("1"), list.pop_back().as_deref());
+
+        assert!(!list.is_empty());
+        assert_eq!(1, list.len());
+        assert_eq!(Some("2"), list.back().map(|s| s.as_str()));
+        assert_eq!(Some("2"), list.pop_back().as_deref());
+
+        assert!(list.is_empty());
+        assert_eq!(0, list.len());
+    }
+
+    #[test]
+    fn list_clone() {
+        let mut list = TestList::new();
+
+        list.try_push_front(String::from("2")).unwrap();
+        list.try_push_front(String::from("1")).unwrap();
+        list.try_push_front(String::from("0")).unwrap();
+
+        let mut clone = list.clone();
+
+        assert_eq!(Some("0"), clone.pop_front().as_deref());
+        assert_eq!(Some("1"), clone.pop_front().as_deref());
+        assert_eq!(Some("2"), clone.pop_front().as_deref());
+        assert_eq!(None, clone.pop_front().as_deref());
+
+        assert_eq!(Some("0"), list.pop_front().as_deref());
+        assert_eq!(Some("1"), list.pop_front().as_deref());
+        assert_eq!(Some("2"), list.pop_front().as_deref());
+        assert_eq!(None, list.pop_front().as_deref());
+    }
+
+    #[test]
+    fn list_from_array() {
+        let list = TestList::try_from([String::from("0"), String::from("1"), String::from("2")]).unwrap();
+
+        assert_eq!(r#"["0", "1", "2"]"#, format!("{list:?}"));
+    }
+
+    #[test]
+    fn list_partial_comparison() {
+        let one: InlineLinkedList<f32, u8, 3> = [0.1, 0.2, 0.3].try_into().unwrap();
+        let two: InlineLinkedList<f32, u8, 3> = [0.1, 0.2, f32::NAN].try_into().unwrap();
+
+        assert_eq!(one, one);
+        assert_ne!(one, two);
+        assert_ne!(two, two);
+
+        assert_eq!(Some(cmp::Ordering::Equal), one.partial_cmp(&one));
+        assert_eq!(None, one.partial_cmp(&two));
+        assert_eq!(None, two.partial_cmp(&two));
+    }
+
+    #[test]
+    fn list_comparison() {
+        let one: TestList = [String::from("0"), String::from("1"), String::from("2")]
+            .try_into()
+            .unwrap();
+        let two: TestList = [String::from("0"), String::from("1"), String::from("3")]
+            .try_into()
+            .unwrap();
+
+        assert_eq!(one, one);
+        assert_ne!(one, two);
+        assert_eq!(two, two);
+
+        assert_eq!(cmp::Ordering::Equal, one.cmp(&one));
+        assert_eq!(cmp::Ordering::Less, one.cmp(&two));
+        assert_eq!(cmp::Ordering::Equal, two.cmp(&two));
+        assert_eq!(cmp::Ordering::Greater, two.cmp(&one));
+    }
+
+    #[test]
+    fn list_extend_clone() {
+        let mut list = TestList::try_from([String::from("0"), String::from("1"), String::from("2")]).unwrap();
+
+        list.extend(&[String::from("3"), String::from("4"), String::from("5")]);
+
+        assert_eq!(r#"["0", "1", "2", "3", "4", "5"]"#, format!("{list:?}"));
+    }
+
+    #[test]
+    fn list_extend() {
+        let mut list = TestList::try_from([String::from("0"), String::from("1"), String::from("2")]).unwrap();
+
+        list.extend([String::from("3"), String::from("4"), String::from("5")]);
+
+        assert_eq!(r#"["0", "1", "2", "3", "4", "5"]"#, format!("{list:?}"));
+    }
+
+    #[test]
+    fn list_from_iterator() {
+        let list: TestList = [0, 1, 2].iter().map(|i| i.to_string()).collect();
+
+        assert_eq!(r#"["0", "1", "2"]"#, format!("{list:?}"));
+    }
+
+    #[test]
+    fn list_into_iter() {
+        let list: TestList = [0, 1, 2].iter().map(|i| i.to_string()).collect();
+
+        let v: Vec<_> = list.into_iter().collect();
+
+        assert_eq!(r#"["0", "1", "2"]"#, format!("{v:?}"));
+    }
+
+    #[test]
+    fn list_iter() {
+        let list: TestList = [0, 1, 2].iter().map(|i| i.to_string()).collect();
+
+        let v: Vec<_> = list.iter().collect();
+
+        assert_eq!(r#"["0", "1", "2"]"#, format!("{v:?}"));
+    }
+
+    #[test]
+    fn list_iter_mut() {
+        let mut list: TestList = [0, 1, 2].iter().map(|i| i.to_string()).collect();
+
+        let mut v: Vec<_> = list.iter_mut().collect();
+
+        for e in &mut v {
+            e.push('a');
+        }
+
+        assert_eq!(r#"["0a", "1a", "2a"]"#, format!("{list:?}"));
+    }
+} // mod inline_bump_tests
