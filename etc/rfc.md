@@ -1,8 +1,7 @@
-Feature Name:   store
-Start Date:     2023-04-29
-RFC PR:         ...
-Rust Issue:     ...
-
+- Feature Name: Store
+- Start Date: 2023-06-17
+- RFC PR: [rust-lang/rfcs#0000](https://github.com/rust-lang/rfcs/pull/0000)
+- Rust Issue: [rust-lang/rust#0000](https://github.com/rust-lang/rust/issues/0000)
 
 #   Summary
 
@@ -282,6 +281,9 @@ By using `Store`, I empower my users to use my type in a wide variety of scenari
 The overhead of using `Store` over `Allocator` is also fairly low, so that the added flexibility comes at little to no
 cost to me.
 
+More examples of collections can be found at https://github.com/matthieu-m/storage/tree/main/src/collection, including
+a complete linked list, a box draft, a concurrent vector draft, and a skip list draft.
+
 
 ##  Store Implementer Guide
 
@@ -429,6 +431,9 @@ And that's it!
 I need not implement `MultipleStore`, and thus do not have to track allocations and deallocations. And I need not
 implement `PinningStore`, and thus do not have to ensure memory address stability across moves.
 
+More examples of `Store` can be found at https://github.com/matthieu-m/storage/tree/main/src/store, including an inline
+bump store.
+
 
 #   Reference-level explanation
 
@@ -492,7 +497,7 @@ pub unsafe trait Store {
 }
 ```
 
-_Note:  full-featured documentation can be found in the companion repository at_
+_Note:  full-featured documentation of the trait and methods can be found in the companion repository at_
         https://github.com/matthieu-m/store/blob/main/src/interface.rs.
 
 The `Store` trait is supplemented by 3 additional marker traits, providing extra guarantees:
@@ -533,7 +538,10 @@ Furthermore, the natural consequence of adopting this RFC would be rewriting the
 the process, even if MIRI would hopefully catch most such bugs.
 
 Finally, having two allocator-like APIs, `Store` and `Allocator`, means that users will forever wonder which trait they
-should implement, and which trait they should use when implementing a collection.
+should implement[^1], and which trait they should use when implementing a collection[^2].
+
+[^1]: Implement `Allocator` if you plan to return pointers, it's simpler, and `Store` otherwise.
+[^2]: Use `Store` to parameterize your collections, it gives more flexibility to your users.
 
 
 #   Rationale and Alternatives
@@ -599,8 +607,9 @@ Beyond being untyped and unchecked, there are also a few oddities, compared to t
 -   By default, using `Store::allocate` or `Store::allocate_zeroed` invalidates all existing handles. This oddity
     stems from the requirement of minimizing the state to be stored in collections using a single allocation at a time
     such as `Box`, `Vec`, `VecDeque`, ...
--   By default, calling any method -- including `resolve` -- invalidates all resolved pointers. This oddity stems from
-    the desire to leave the API flexible enough to allow caching stores, single-allocation stores, or copying stores.
+-   By default, calling any method -- including `resolve` -- invalidates all resolved pointers[^1]. This oddity stems
+    from the desire to leave the API flexible enough to allow caching stores, single-allocation stores, or copying
+    stores.
 -   By default, moving `Store` invalidates all resolved pointers. This oddity stems from the fact that when using an
     in-line store the pointers point within the block of memory covered by the store, and thus after it moved, are left
     pointing into the void.
@@ -608,6 +617,8 @@ Beyond being untyped and unchecked, there are also a few oddities, compared to t
 When the above should be guaranteed, extra marker traits can be implemented to provide compile-time checking that these
 properties hold, which in turn allows the final user to safely mix and match collection and store, relying on compiler
 errors to prevent erroneous couplings.
+
+[^1]: With the exception, in the case of a call to `resolve`, of any pointer derived from a copy of the handle argument.
 
 
 ##  Mutable Store
@@ -672,7 +683,7 @@ at the store level. The `UniqueHandle` possible future extension, which is non-i
 3rd-party code:
 
 -   Borrows the (unique) handle mutably or immutably, ensuring no misgotten access is provided.
--   Borrows the store immutably, ensuring it is not moved nor dropped, which would invalidate the pointers.
+-   Borrows the store immutably, ensuring it is not moved nor dropped, which would potentially invalidate the pointers.
 
 This solution is more flexible, and more minimalist, generally a good sign with regard to API design.
 
@@ -687,8 +698,8 @@ somewhat hidden cost, however, is that `Store` is then no longer dyn-safe.
 An intermediate solution to restore dyn-safety would be a where clause `Self: Sized`, but while this would indeed make
 `Store` dyn-safe, it would still result in only providing partial functionality. This seems clearly undesirable.
 
-In the absence of strong usecase for creating dangling handles in the absence of an instance of `Store`, it seems
-preferable to have `Store::dangling` take `&self` so that `dyn Store` be fully functional.
+In the absence of strong usecase for creating dangling handles with no instance of `Store`, it seems preferable to have
+`Store::dangling` take `&self` so that `dyn Store` may be fully functional.
 
 
 ##  Adapter vs Blanket Implementation
@@ -742,7 +753,7 @@ spectacularly:
 1.  While one can specify a non-pointer `pointer` type, this type MUST still be pointer-like: it must be
     dereferenceable, etc... This requirement mostly requires the type to embed a pointer -- possibly augmented -- and
     thus makes it unsuitable for in-line store, unsuitable for compaction, and only usable for shared memory usage
-    with difficulty.
+    with global/thread-local companion state.
 2.  While one can specify a non-reference `reference` type, the lack of `Deref` means that such a type does not,
     actually, behave as a reference, and while proxies can be crafted for specific types (`std::vector<bool>`
     demonstrates it) it's impossible to craft transparent proxies in the generic case.
@@ -764,16 +775,17 @@ allocator API.
 
 I have been seeking a better allocator API for years, now. This RFC draws from this experience:
 
--   I implemented a similar API _specifically_ for vector-like collections in C++. It was much less flexible, and
-    tailored for C++ requirements, but did prove that a somewhat minimalist API _was_ sufficient to build a collection
-    that could then be declined in Inline, Small, and "regular" versions.
+-   I implemented an API with a similar goal _specifically_ for vector-like collections in C++. It was much less
+    flexible, and tailored for C++ requirements, but did prove that a somewhat minimalist API _was_ sufficient to build
+    a collection that could then be declined in Inline, Small, and "regular" versions.
 -   Early 2021, I demonstrated the potential for stores in https://github.com/matthieu-m/storage-poc. It was based
     on my C++ experience, from which it inherited strong typing, which itself required GATs...
 -   Early 2022, @CAD97 demonstrated that a much leaner API could be made in https://github.com/CAD97/storages-api.
     After reviewing his work, I concluded that the API was not suitable to replace `Allocator` in a number of
     situations as discussed in the Alternatives section, and that further adjustments needed to be made.
 
-And thus in early 2023 I implemented a 3rd revision of the API, a revision I am increasingly confident in for 2 reasons:
+And thus in early 2023 I began work on a 3rd revision of the API, a revision I am increasingly confident in for 2
+reasons:
 
 1.  It is nearly a direct translation of the `Allocator` API, which has been used within the Rust standard library for
     years now.
@@ -796,8 +808,8 @@ A separate solution is required to regain coercibility, which is out of scope of
 if `StoreBox<T, S>` were to become `Box`, which seems preferable to keeping it separate.
 
 A suggestion would be to have a `TypedMetadata<T>` lang item, which would implement `CoerceUnsized` appropriately, and
-the companion repository showcases how building upon this `StoreBox` gains the ability to be `CoerceUnsized`. This is
-a topic for another RFC, however.
+[the companion repository showcases](https://github.com/matthieu-m/storage/blob/main/src/extension/typed_metadata.rs)
+how building upon this `StoreBox` gains the ability to be `CoerceUnsized`. This is a topic for another RFC, however.
 
 
 ##  (Medium) To `Clone`, to `Default`?
@@ -874,7 +886,7 @@ There doesn't seem to be a practical advantage in doing so for most of the assoc
 allocation and deallocation need be executed in a const context, then a `const Store` is necessary, and there's no need
 to single out any of those.
 
-There is, however, a very practical advantage in making `Store::dangling` const: it allows initialized an empty
+There is, however, a very practical advantage in making `Store::dangling` const: it allows initializing an empty
 collection in a const context even with a non-const `Store` implementation.
 
 The one downside is that this would preclude some implementations of `dangling` which would rely on global state, or
@@ -889,7 +901,7 @@ would still be possible to initialize the instance of `Store` with a random seed
 One (other) underdevelopped aspect of the `Allocator` API at the moment is the handling of fungibility of pointers, that
 is the description -- in trait -- of whether a pointer allocated by one `Allocator` can be grown, shrunk, or deallocated
 by another instance of `Allocator`. The immediate consequence is that `Rc` is only `Clone` for `Global`, and the
-`LinkedList::append` and `LinkedList::split_off` methods are similarly only available for `Global` allocator.
+`LinkedList::append` method is similarly only available for `Global` allocator.
 
 A possible future extension for the Storage proposal is the introduction of the `SharingStore` trait:
 
@@ -922,7 +934,7 @@ store which cannot be shared if its handles currently point to inline memory.
 ##  TypedHandle
 
 A straightforward extension is to define a `TypedHandle<T, H>` type, which wraps a handle (`H`) to a block of memory
-suitable for an instance of `T`, as well as the metadata of `T`.
+suitable for an instance of `T`, and also wraps the metadata of `T`.
 
 The `Store` methods can then be mimicked, with the additional type information:
 
@@ -963,7 +975,7 @@ On the other hand, those two methods guarantee:
 -   Proper borrow-checking: the handle is the unique entry point to the instance of `T`, hence the name.
 -   Proper pinning: even if the store does not implement `PinningStore`, borrowing it ensures that it cannot be moved
     nor dropped. If the store implements `StableStore`, this means that the result of `resolve` and `resolve_mut` can be
-    used safely.
+    used without fear of invalidation.
 
 And that's pretty good, given how straightforward the code is.
 
@@ -975,11 +987,12 @@ How far should DRY go?
 One limitation of `Vec<u8, InlineStore<[u8; 16]>>` is that it contains 2 `usize` for the length and capacity
 respectively, which is rather unfortunate.
 
-There are potential solutions to the issue, using separate traits for those so they can be stored in more compact ways
-or even elided in the case of fixed capacity.
+There are potential solutions to the issue, using separate traits for those values so they can be stored in more compact
+ways or even elided in the case of fixed capacity.
 
-The `Store` API could be augmented to provide associated constants / types describing the limits of what it can offer
-such as minimum/maximum capacity, to support automatically selecting (or constraint-checking) the appropriate types.
+The `Store` API could be augmented with a new marker trait with associated constants / types describing the limits of
+what it can offer such as minimum/maximum capacity, to support automatically selecting (or constraint-checking) the
+appropriate types.
 
 Since those extra capabilities can be brought in by user traits for now, I would favor adopting a wait-and-see approach
 here.
