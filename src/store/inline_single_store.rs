@@ -7,7 +7,7 @@ use core::{
     cell::UnsafeCell,
     fmt,
     mem::{self, MaybeUninit},
-    ptr::{self, NonNull},
+    ptr::{self, Alignment, NonNull},
 };
 
 use crate::interface::{StableStore, Store};
@@ -26,7 +26,13 @@ impl<T> Default for InlineSingleStore<T> {
 unsafe impl<T> Store for InlineSingleStore<T> {
     type Handle = ();
 
-    fn dangling(&self) -> Self::Handle {}
+    fn dangling(&self, alignment: Alignment) -> Result<Self::Handle, AllocError> {
+        if alignment <= Alignment::of::<T>() {
+            Ok(())
+        } else {
+            Err(AllocError)
+        }
+    }
 
     fn allocate(&self, layout: Layout) -> Result<(Self::Handle, usize), AllocError> {
         Self::validate_layout(layout)?;

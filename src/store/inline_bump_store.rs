@@ -9,7 +9,7 @@ use core::{
     cell::{Cell, UnsafeCell},
     fmt,
     mem::MaybeUninit,
-    ptr::{self, NonNull},
+    ptr::{self, Alignment, NonNull},
 };
 
 use crate::interface::{MultipleStore, StableStore, Store};
@@ -54,8 +54,14 @@ where
 {
     type Handle = H;
 
-    fn dangling(&self) -> Self::Handle {
-        Self::from_offset(Self::memory_layout().size()).expect("Size of `T` to be representable by `H`")
+    fn dangling(&self, alignment: Alignment) -> Result<Self::Handle, AllocError> {
+        let layout = Self::memory_layout();
+
+        if alignment.as_usize() > layout.align() {
+            return Err(AllocError);
+        }
+
+        Self::from_offset(alignment.as_usize())
     }
 
     fn allocate(&self, layout: Layout) -> Result<(Self::Handle, usize), AllocError> {

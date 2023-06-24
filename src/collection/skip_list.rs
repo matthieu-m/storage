@@ -39,7 +39,8 @@ impl<K, V, S: Store> SkipList<K, V, S> {
     /// Creates a new, empty, instance with the given store.
     pub fn with_store(store: S) -> Self {
         let length = 0;
-        let head = TypedHandle::dangling(&store);
+        let head = NodeHandle::dangling(&store);
+
         //  0 is not particularly good; on the allocation of the first node it'll be switched with its address instead.
         let prng = Rand32::new(0);
 
@@ -484,10 +485,12 @@ where
             //  -   `offset + index * size` is within bounds, since the calculation of the layout succeeded.
             let link = unsafe { pointer.add(index) };
 
+            let dangling = NodeHandle::dangling(store);
+
             //  Safety:
             //  -   `link` is valid for writes.
             //  -   `link` is properly aligned.
-            unsafe { ptr::write(link, NodeHandle::dangling(store)) };
+            unsafe { ptr::write(link, dangling) };
         }
 
         //  Safety:

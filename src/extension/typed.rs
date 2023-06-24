@@ -3,19 +3,18 @@
 use core::{
     alloc::{AllocError, Layout},
     marker::Unsize,
-    ptr::{self, NonNull},
+    ptr::{self, Alignment, NonNull},
 };
 
 #[cfg(feature = "coercible-metadata")]
 use core::ops::CoerceUnsized;
 
-use crate::{extension::typed_metadata::TypedMetadata, interface::Store};
+use crate::{alloc, extension::typed_metadata::TypedMetadata, interface::Store};
 
 /// Arbitrary typed handle, for type safety, and coercion.
 ///
-/// A typed handle may be invalid, either because it was created dangling, or because it became invalid following an
-/// operation on the store that allocated it. It is the responsibility of the user to ensure that the typed handle
-/// is valid when necessary.
+/// A typed handle may be dangling, or may be invalid. It is the responsibility of the user to ensure that the typed
+/// handle is valid when necessary.
 pub struct TypedHandle<T: ?Sized, H> {
     handle: H,
     metadata: TypedMetadata<T>,
@@ -23,15 +22,32 @@ pub struct TypedHandle<T: ?Sized, H> {
 
 impl<T, H: Copy> TypedHandle<T, H> {
     /// Creates a dangling handle.
+    ///
+    /// Calls `handle_alloc_error` if the creation of the handle fails.
     #[inline(always)]
     pub fn dangling<S>(store: &S) -> Self
     where
         S: Store<Handle = H>,
     {
-        let handle = store.dangling();
+        let Ok(this) = Self::try_dangling(store) else {
+            alloc::handle_alloc_error(Layout::new::<T>())
+        };
+
+        this
+    }
+
+    /// Attempts to create a dangling handle.
+    ///
+    /// Returns `AllocError` on failure.
+    #[inline(always)]
+    pub fn try_dangling<S>(store: &S) -> Result<Self, AllocError>
+    where
+        S: Store<Handle = H>,
+    {
+        let handle = store.dangling(Alignment::of::<T>())?;
         let metadata = TypedMetadata::default();
 
-        Self { handle, metadata }
+        Ok(Self { handle, metadata })
     }
 
     /// Creates a new handle, pointing to a `T`.

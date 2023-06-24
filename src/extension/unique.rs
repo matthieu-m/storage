@@ -15,12 +15,25 @@ pub struct UniqueHandle<T: ?Sized, H>(TypedHandle<T, H>);
 
 impl<T, H: Copy> UniqueHandle<T, H> {
     /// Creates a dangling handle.
+    ///
+    /// Calls `handle_alloc_error` on allocation failure.
     #[inline(always)]
     pub fn dangling<S>(store: &S) -> Self
     where
         S: Store<Handle = H>,
     {
         Self(TypedHandle::dangling(store))
+    }
+
+    /// Attempts to create a dangling handle.
+    ///
+    /// Returns an error on allocation failure.
+    #[inline(always)]
+    pub fn try_dangling<S>(store: &S) -> Result<Self, AllocError>
+    where
+        S: Store<Handle = H>,
+    {
+        TypedHandle::try_dangling(store).map(Self)
     }
 
     /// Creates a new handle, pointing to a `T`.

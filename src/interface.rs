@@ -2,7 +2,7 @@
 
 use core::{
     alloc::{AllocError, Layout},
-    ptr::{self, NonNull},
+    ptr::{self, Alignment, NonNull},
 };
 
 /// A trait abstracting memory store.
@@ -44,10 +44,14 @@ pub unsafe trait Store {
 
     /// Creates a dangling handle.
     ///
-    /// A dangling handle is never valid, and thus cannot be deallocated, resolved, grown, shrunk, etc... Furthermore
-    /// there is no explicit way to distinguish whether a handle is dangling, or not. It is up to the user to remember
-    /// whether a given handle is dangling, valid, or used to be valid but was invalidated.
-    fn dangling(&self) -> Self::Handle;
+    /// The one method of `Store` which may be called with a dangling handle is the `Store::resolve` method. The pointer
+    /// so obtained is guaranteed to be at least aligned according to `alignment`, though it remains invalid and cannot
+    /// be dereferenced.
+    ///
+    /// For all other purposes, a dangling handle is never valid, and thus cannot be deallocated, grown, nor shrunk...
+    /// Furthermore there is no explicit way to distinguish whether a handle is dangling, or not. It is up to the user
+    /// to remember whether a given handle is dangling, valid, or used to be valid but was invalidated.
+    fn dangling(&self, alignment: Alignment) -> Result<Self::Handle, AllocError>;
 
     /// Resolves the `handle` into a pointer to the first byte of the associated block of memory.
     ///
@@ -251,7 +255,8 @@ pub unsafe trait StableStore: Store {}
 /// it is valid, in particular even after the instance of `Store` was moved.
 ///
 /// As a corrolary, forgetting the instance of `Store` -- which is moving without dropping -- means that the resolved
-/// pointers will remain valid until, somehow, the instance of `Store` is recovered (from scratch) and dropped.
+/// pointers will remain pinned until either the instance of `Store` is recovered (from scratch) and dropped, or until
+/// the lifetime bound of the `Store` concrete type (if not `'static`) expires, whichever comes first.
 pub unsafe trait PinningStore: StableStore {}
 
 /// A refinement of `Store` which allows multiple instances to share the handles and their associated blocks of memory.

@@ -17,10 +17,12 @@
 #![feature(maybe_uninit_write_slice)]
 #![feature(offset_of)]
 #![feature(never_type)]
+#![feature(ptr_alignment_type)]
 #![feature(ptr_as_uninit)]
 #![feature(ptr_metadata)]
 #![feature(slice_ptr_get)]
 #![feature(specialization)]
+#![feature(strict_provenance)]
 #![feature(unsize)]
 #![feature(unwrap_infallible)]
 //  Lints
@@ -31,6 +33,7 @@
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
+mod alloc;
 pub mod collection;
 pub mod extension;
 pub mod interface;

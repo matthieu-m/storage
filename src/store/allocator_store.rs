@@ -2,7 +2,7 @@
 
 use core::{
     alloc::{AllocError, Allocator, Layout},
-    ptr::NonNull,
+    ptr::{self, Alignment, NonNull},
 };
 
 #[cfg(feature = "alloc")]
@@ -19,8 +19,12 @@ where
 {
     type Handle = NonNull<u8>;
 
-    fn dangling(&self) -> Self::Handle {
-        NonNull::dangling()
+    fn dangling(&self, alignment: Alignment) -> Result<Self::Handle, AllocError> {
+        let pointer = ptr::invalid_mut(alignment.as_usize());
+
+        //  Safety:
+        //  -   Non-null, since `alignment` is non-zero.
+        Ok(unsafe { NonNull::new_unchecked(pointer) })
     }
 
     fn allocate(&self, layout: Layout) -> Result<(Self::Handle, usize), AllocError> {
