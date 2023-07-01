@@ -114,7 +114,10 @@ impl<T, S: Store> LinkedList<T, S> {
     }
 
     /// Returns a mutable reference to the front element, if any.
-    pub fn front_mut(&mut self) -> Option<&mut T> {
+    pub const fn front_mut(&mut self) -> Option<&mut T>
+    where
+        S: ~const Store,
+    {
         if self.is_empty() {
             return None;
         }
@@ -132,7 +135,10 @@ impl<T, S: Store> LinkedList<T, S> {
     }
 
     /// Returns a mutable reference to the back element, if any.
-    pub fn back_mut(&mut self) -> Option<&mut T> {
+    pub const fn back_mut(&mut self) -> Option<&mut T>
+    where
+        S: ~const Store,
+    {
         if self.is_empty() {
             return None;
         }
@@ -150,7 +156,10 @@ impl<T, S: Store> LinkedList<T, S> {
     }
 
     /// Pops the element at the front of the list, if any.
-    pub fn pop_front(&mut self) -> Option<T> {
+    pub const fn pop_front(&mut self) -> Option<T>
+    where
+        S: ~const Store,
+    {
         if self.is_empty() {
             return None;
         }
@@ -181,7 +190,10 @@ impl<T, S: Store> LinkedList<T, S> {
     }
 
     /// Pops the element at the back of the list, if any.
-    pub fn pop_back(&mut self) -> Option<T> {
+    pub const fn pop_back(&mut self) -> Option<T>
+    where
+        S: ~const Store,
+    {
         if self.is_empty() {
             return None;
         }
@@ -264,7 +276,7 @@ impl<T, S: StoreMultiple> LinkedList<T, S> {
 
 impl<T, S: StoreStable> LinkedList<T, S> {
     /// Returns an iterator of references to the elements.
-    pub fn iter(&self) -> Iter<'_, T, S> {
+    pub const fn iter(&self) -> Iter<'_, T, S> {
         Iter {
             length: self.length,
             head: self.head,
@@ -274,7 +286,7 @@ impl<T, S: StoreStable> LinkedList<T, S> {
     }
 
     /// Returns an iterator of mutable references to the elements.
-    pub fn iter_mut(&mut self) -> IterMut<'_, T, S> {
+    pub const fn iter_mut(&mut self) -> IterMut<'_, T, S> {
         IterMut {
             length: self.length,
             head: self.head,
@@ -284,7 +296,10 @@ impl<T, S: StoreStable> LinkedList<T, S> {
     }
 
     /// Returns a reference to the front element, if any.
-    pub fn front(&self) -> Option<&T> {
+    pub const fn front(&self) -> Option<&T>
+    where
+        S: ~const Store,
+    {
         if self.is_empty() {
             return None;
         }
@@ -303,7 +318,10 @@ impl<T, S: StoreStable> LinkedList<T, S> {
     }
 
     /// Returns a reference to the back element, if any.
-    pub fn back(&self) -> Option<&T> {
+    pub const fn back(&self) -> Option<&T>
+    where
+        S: ~const Store,
+    {
         if self.is_empty() {
             return None;
         }

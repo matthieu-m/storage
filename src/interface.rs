@@ -38,6 +38,7 @@ use core::{
 ///
 /// A specific implementation of Store may provide extended validity guarantees, and should implement the extended
 /// guarantees traits when it does so.
+#[const_trait]
 pub unsafe trait Store: StoreDangling {
     /// Resolves the `handle` into a pointer to the first byte of the associated block of memory.
     ///
@@ -150,7 +151,9 @@ pub unsafe trait Store: StoreDangling {
     /// Returning `Err` indicates that either the memory is exhausted, or the store cannot satisfy `new_layout`
     /// constraints.
     fn allocate_zeroed(&self, layout: Layout) -> Result<(Self::Handle, usize), AllocError> {
-        let (handle, size) = self.allocate(layout)?;
+        let Ok((handle, size)) = self.allocate(layout) else {
+            return Err(AllocError)
+        };
 
         //  Safety:
         //  -   `handle` has been allocated by `self`.
@@ -184,7 +187,9 @@ pub unsafe trait Store: StoreDangling {
     ) -> Result<(Self::Handle, usize), AllocError> {
         //  Safety:
         //  -   All pre-conditions of `grow` are pre-conditions of `grow_zeroed`.
-        let (handle, new_size) = unsafe { self.grow(handle, old_layout, new_layout)? };
+        let Ok((handle, new_size)) = (unsafe { self.grow(handle, old_layout, new_layout) }) else {
+            return Err(AllocError)
+        };
 
         //  Safety:
         //  -   `handle` has been allocated by `self`.

@@ -57,11 +57,15 @@ impl<T, H: Copy> UniqueHandle<T, H> {
     ///
     /// Unless `store` implements `StoreMultiple`, this invalidates all existing handles of `store`.
     #[inline(always)]
-    pub fn allocate<S>(store: &S) -> Result<Self, AllocError>
+    pub const fn allocate<S>(store: &S) -> Result<Self, AllocError>
     where
-        S: Store<Handle = H>,
+        S: ~const Store<Handle = H>,
     {
-        TypedHandle::allocate(store).map(Self)
+        let Ok(handle) = TypedHandle::allocate(store) else {
+            return Err(AllocError)
+        };
+
+        Ok(Self(handle))
     }
 
     /// Allocates a new handle, with enough space for `T`.
@@ -70,11 +74,15 @@ impl<T, H: Copy> UniqueHandle<T, H> {
     ///
     /// Unless `store` implements `StoreMultiple`, this invalidates all existing handles of `store`.
     #[inline(always)]
-    pub fn allocate_zeroed<S>(store: &S) -> Result<Self, AllocError>
+    pub const fn allocate_zeroed<S>(store: &S) -> Result<Self, AllocError>
     where
-        S: Store<Handle = H>,
+        S: ~const Store<Handle = H>,
     {
-        TypedHandle::allocate_zeroed(store).map(Self)
+        let Ok(handle) = TypedHandle::allocate_zeroed(store) else {
+            return Err(AllocError)
+        };
+
+        Ok(Self(handle))
     }
 }
 
@@ -90,12 +98,12 @@ impl<T: ?Sized, H: Copy> UniqueHandle<T, H> {
     /// #   Safety
     ///
     /// -   No copy of `handle` must be used henceforth.
-    pub unsafe fn from_raw_parts(handle: H, metadata: TypedMetadata<T>) -> Self {
+    pub const unsafe fn from_raw_parts(handle: H, metadata: TypedMetadata<T>) -> Self {
         Self(TypedHandle::from_raw_parts(handle, metadata))
     }
 
     /// Decomposes a (possibly wide) pointer into its handle and metadata components.
-    pub fn to_raw_parts(self) -> (H, TypedMetadata<T>) {
+    pub const fn to_raw_parts(self) -> (H, TypedMetadata<T>) {
         self.0.to_raw_parts()
     }
 
@@ -106,9 +114,9 @@ impl<T: ?Sized, H: Copy> UniqueHandle<T, H> {
     /// -   `self` must have been allocated by `store`.
     /// -   `self` must still be valid.
     #[inline(always)]
-    pub unsafe fn deallocate<S>(self, store: &S)
+    pub const unsafe fn deallocate<S>(self, store: &S)
     where
-        S: Store<Handle = H>,
+        S: ~const Store<Handle = H>,
     {
         //  Safety:
         //  -   `self.0` has been allocated by `store`, as per pre-conditions.
@@ -129,9 +137,9 @@ impl<T: ?Sized, H: Copy> UniqueHandle<T, H> {
     ///     Most notably, unless `store` implements `StoreStable`, any method call on `store`, including other
     ///     `resolve` calls, may invalidate the reference.
     #[inline(always)]
-    pub unsafe fn resolve<'a, S>(&'a self, store: &'a S) -> &'a T
+    pub const unsafe fn resolve<'a, S>(&'a self, store: &'a S) -> &'a T
     where
-        S: Store<Handle = H>,
+        S: ~const Store<Handle = H>,
     {
         //  Safety:
         //  -   `self.handle` was allocated by `store`, as per pre-conditions.
@@ -158,9 +166,9 @@ impl<T: ?Sized, H: Copy> UniqueHandle<T, H> {
     ///     Most notably, unless `store` implements `StoreStable`, any method call on `store`, including other
     ///     `resolve` calls, may invalidate the reference.
     #[inline(always)]
-    pub unsafe fn resolve_mut<'a, S>(&'a mut self, store: &'a S) -> &'a mut T
+    pub const unsafe fn resolve_mut<'a, S>(&'a mut self, store: &'a S) -> &'a mut T
     where
-        S: Store<Handle = H>,
+        S: ~const Store<Handle = H>,
     {
         //  Safety:
         //  -   `self.handle` was allocated by `store`, as per pre-conditions.
@@ -186,9 +194,9 @@ impl<T: ?Sized, H: Copy> UniqueHandle<T, H> {
     ///     Most notably, unless `store` implements `StoreStable`, any method call on `store`, including other
     ///     `resolve` calls, may invalidate the pointer.
     #[inline(always)]
-    pub unsafe fn resolve_raw<S>(&self, store: &S) -> NonNull<T>
+    pub const unsafe fn resolve_raw<S>(&self, store: &S) -> NonNull<T>
     where
-        S: Store<Handle = H>,
+        S: ~const Store<Handle = H>,
     {
         //  Safety:
         //  -   `self.handle` was allocated by `store`, as per pre-conditions.
@@ -198,7 +206,7 @@ impl<T: ?Sized, H: Copy> UniqueHandle<T, H> {
 
     /// Coerces the handle into another.
     #[inline(always)]
-    pub fn coerce<U: ?Sized>(self) -> UniqueHandle<U, H>
+    pub const fn coerce<U: ?Sized>(self) -> UniqueHandle<U, H>
     where
         T: Unsize<U>,
     {
@@ -208,12 +216,12 @@ impl<T: ?Sized, H: Copy> UniqueHandle<T, H> {
 
 impl<T, H: Copy> UniqueHandle<[T], H> {
     /// Returns whether the memory area associated to `self` may not contain any element.
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
     /// Returns the number of elements the memory area associated to `self` may contain.
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.0.len()
     }
 

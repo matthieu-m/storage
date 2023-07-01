@@ -35,9 +35,11 @@ unsafe impl<T> const StoreDangling for InlineSingleStore<T> {
     }
 }
 
-unsafe impl<T> Store for InlineSingleStore<T> {
+unsafe impl<T> const Store for InlineSingleStore<T> {
     fn allocate(&self, layout: Layout) -> Result<(Self::Handle, usize), AllocError> {
-        Self::validate_layout(layout)?;
+        if Self::validate_layout(layout).is_err() {
+            return Err(AllocError);
+        }
 
         Ok(((), mem::size_of::<T>()))
     }
@@ -60,10 +62,12 @@ unsafe impl<T> Store for InlineSingleStore<T> {
     ) -> Result<(Self::Handle, usize), AllocError> {
         debug_assert!(
             new_layout.size() >= _old_layout.size(),
-            "{new_layout:?} must have a greater size than {_old_layout:?}"
+            "new_layout must have a greater size than _old_layout"
         );
 
-        Self::validate_layout(new_layout)?;
+        if Self::validate_layout(new_layout).is_err() {
+            return Err(AllocError);
+        }
 
         Ok(((), mem::size_of::<T>()))
     }
@@ -76,14 +80,16 @@ unsafe impl<T> Store for InlineSingleStore<T> {
     ) -> Result<(Self::Handle, usize), AllocError> {
         debug_assert!(
             _new_layout.size() >= _old_layout.size(),
-            "{_new_layout:?} must have a smaller size than {_old_layout:?}"
+            "_new_layout must have a smaller size than _old_layout"
         );
 
         Ok(((), mem::size_of::<T>()))
     }
 
     fn allocate_zeroed(&self, layout: Layout) -> Result<(Self::Handle, usize), AllocError> {
-        Self::validate_layout(layout)?;
+        if Self::validate_layout(layout).is_err() {
+            return Err(AllocError);
+        }
 
         let pointer = self.0.get() as *mut u8;
 
@@ -104,10 +110,12 @@ unsafe impl<T> Store for InlineSingleStore<T> {
     ) -> Result<(Self::Handle, usize), AllocError> {
         debug_assert!(
             new_layout.size() >= old_layout.size(),
-            "{new_layout:?} must have a greater size than {old_layout:?}"
+            "new_layout must have a greater size than old_layout"
         );
 
-        Self::validate_layout(new_layout)?;
+        if Self::validate_layout(new_layout).is_err() {
+            return Err(AllocError);
+        }
 
         let pointer = self.0.get() as *mut u8;
 
@@ -147,7 +155,7 @@ impl<T> fmt::Debug for InlineSingleStore<T> {
 //
 
 impl<T> InlineSingleStore<T> {
-    fn validate_layout(layout: Layout) -> Result<(), AllocError> {
+    const fn validate_layout(layout: Layout) -> Result<(), AllocError> {
         let own = Layout::new::<T>();
 
         if layout.align() <= own.align() && layout.size() <= own.size() {

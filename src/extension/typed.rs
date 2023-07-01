@@ -78,7 +78,7 @@ impl<T, H: Copy> TypedHandle<T, H> {
         //  -   `pointer` has exclusive access to the memory area it points to.
         unsafe { ptr::write(pointer.cast().as_ptr(), value) };
 
-        let metadata = TypedMetadata::default();
+        let metadata = TypedMetadata::new();
 
         Ok(Self { handle, metadata })
     }
@@ -89,12 +89,15 @@ impl<T, H: Copy> TypedHandle<T, H> {
     ///
     /// Unless `store` implements `StoreMultiple`, this invalidates all existing handles of `store`.
     #[inline(always)]
-    pub fn allocate<S>(store: &S) -> Result<Self, AllocError>
+    pub const fn allocate<S>(store: &S) -> Result<Self, AllocError>
     where
-        S: Store<Handle = H>,
+        S: ~const Store<Handle = H>,
     {
-        let (handle, _) = store.allocate(Layout::new::<T>())?;
-        let metadata = TypedMetadata::default();
+        let Ok((handle, _)) = store.allocate(Layout::new::<T>()) else {
+            return Err(AllocError)
+        };
+
+        let metadata = TypedMetadata::new();
 
         Ok(Self { handle, metadata })
     }
@@ -105,12 +108,15 @@ impl<T, H: Copy> TypedHandle<T, H> {
     ///
     /// Unless `store` implements `StoreMultiple`, this invalidates all existing handles of `store`.
     #[inline(always)]
-    pub fn allocate_zeroed<S>(store: &S) -> Result<Self, AllocError>
+    pub const fn allocate_zeroed<S>(store: &S) -> Result<Self, AllocError>
     where
-        S: Store<Handle = H>,
+        S: ~const Store<Handle = H>,
     {
-        let (handle, _) = store.allocate_zeroed(Layout::new::<T>())?;
-        let metadata = TypedMetadata::default();
+        let Ok((handle, _)) = store.allocate_zeroed(Layout::new::<T>()) else {
+            return Err(AllocError)
+        };
+
+        let metadata = TypedMetadata::new();
 
         Ok(Self { handle, metadata })
     }
@@ -124,12 +130,12 @@ impl<T: ?Sized, H: Copy> TypedHandle<T, H> {
     /// -   If `handle` is invalid, then the resulting typed handle is invalid.
     /// -   If `handle` is valid and `metadata` does not fit the block of memory associated with it, then the resulting
     ///     typed handle is invalid.
-    pub fn from_raw_parts(handle: H, metadata: TypedMetadata<T>) -> Self {
+    pub const fn from_raw_parts(handle: H, metadata: TypedMetadata<T>) -> Self {
         Self { handle, metadata }
     }
 
     /// Decomposes a (possibly wide) pointer into its (raw) handle and metadata components.
-    pub fn to_raw_parts(self) -> (H, TypedMetadata<T>) {
+    pub const fn to_raw_parts(self) -> (H, TypedMetadata<T>) {
         (self.handle, self.metadata)
     }
 
@@ -141,9 +147,9 @@ impl<T: ?Sized, H: Copy> TypedHandle<T, H> {
     /// -   `self` must still be valid.
     /// -   `self` is invalidated alongside any copy of it.
     #[inline(always)]
-    pub unsafe fn deallocate<S>(&self, store: &S)
+    pub const unsafe fn deallocate<S>(&self, store: &S)
     where
-        S: Store<Handle = H>,
+        S: ~const Store<Handle = H>,
     {
         //  Safety:
         //  -   `self.handle` was allocated by `store`, as per pre-conditions.
@@ -175,9 +181,9 @@ impl<T: ?Sized, H: Copy> TypedHandle<T, H> {
     ///     Most notably, unless `store` implements `StoreStable`, any method call on `store`, including other
     ///     `resolve` calls, may invalidate the reference.
     #[inline(always)]
-    pub unsafe fn resolve<'a, S>(&self, store: &'a S) -> &'a T
+    pub const unsafe fn resolve<'a, S>(&self, store: &'a S) -> &'a T
     where
-        S: Store<Handle = H>,
+        S: ~const Store<Handle = H>,
     {
         //  Safety:
         //  -   `self.handle` was allocated by `store`, as per pre-conditions.
@@ -206,9 +212,9 @@ impl<T: ?Sized, H: Copy> TypedHandle<T, H> {
     ///     `resolve` calls, may invalidate the reference.
     #[inline(always)]
     #[allow(clippy::mut_from_ref)]
-    pub unsafe fn resolve_mut<'a, S>(&mut self, store: &'a S) -> &'a mut T
+    pub const unsafe fn resolve_mut<'a, S>(&mut self, store: &'a S) -> &'a mut T
     where
-        S: Store<Handle = H>,
+        S: ~const Store<Handle = H>,
     {
         //  Safety:
         //  -   `self.handle` was allocated by `store`, as per pre-conditions.
@@ -234,9 +240,9 @@ impl<T: ?Sized, H: Copy> TypedHandle<T, H> {
     ///     Most notably, unless `store` implements `StoreStable`, any method call on `store`, including other
     ///     `resolve` calls, may invalidate the pointer.
     #[inline(always)]
-    pub unsafe fn resolve_raw<S>(&self, store: &S) -> NonNull<T>
+    pub const unsafe fn resolve_raw<S>(&self, store: &S) -> NonNull<T>
     where
-        S: Store<Handle = H>,
+        S: ~const Store<Handle = H>,
     {
         //  Safety:
         //  -   `self.handle` was allocated by `store`, as per pre-conditions.
@@ -250,7 +256,7 @@ impl<T: ?Sized, H: Copy> TypedHandle<T, H> {
     ///
     /// If `self` is valid, the resulting typed handle is valid; otherwise it is invalid.
     #[inline(always)]
-    pub fn coerce<U: ?Sized>(&self) -> TypedHandle<U, H>
+    pub const fn coerce<U: ?Sized>(&self) -> TypedHandle<U, H>
     where
         T: Unsize<U>,
     {
@@ -265,12 +271,12 @@ impl<T: ?Sized, H: Copy> TypedHandle<T, H> {
 
 impl<T, H: Copy> TypedHandle<[T], H> {
     /// Returns whether the memory area associated to `self` may not contain any element.
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.metadata.get() == 0
     }
 
     /// Returns the number of elements the memory area associated to `self` may contain.
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.metadata.get()
     }
 

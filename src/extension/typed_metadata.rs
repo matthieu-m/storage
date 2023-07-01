@@ -39,7 +39,7 @@ mod implementation {
         }
 
         /// Coerces the metadata into another.
-        pub fn coerce<U: ?Sized>(&self) -> TypedMetadata<U>
+        pub const fn coerce<U: ?Sized>(&self) -> TypedMetadata<U>
         where
             T: Unsize<U>,
         {
@@ -81,7 +81,7 @@ mod implementation {
         }
 
         /// Coerces the metadata into another.
-        pub fn coerce<U: ?Sized>(&self) -> TypedMetadata<U>
+        pub const fn coerce<U: ?Sized>(&self) -> TypedMetadata<U>
         where
             T: Unsize<U>,
         {
