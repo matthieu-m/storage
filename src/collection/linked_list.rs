@@ -1,12 +1,12 @@
 //! A Linked List.
 //!
-//! This implementation is solely meant to demonstrate the use of `SharingStore`, it is incomplete, and may be buggy.
+//! This implementation is solely meant to demonstrate the use of `StoreSharing`, it is incomplete, and may be buggy.
 
 use core::{alloc::AllocError, cmp, fmt, hash, mem, ptr};
 
 use crate::{
     extension::typed::TypedHandle,
-    interface::{SharingStore, Store, StoreDangling, StoreMultiple, StoreStable},
+    interface::{Store, StoreDangling, StoreMultiple, StoreSharing, StoreStable},
 };
 
 /// A singly-linked list.
@@ -340,7 +340,7 @@ impl<T, S: StoreStable> LinkedList<T, S> {
     }
 }
 
-impl<T, S: SharingStore> LinkedList<T, S> {
+impl<T, S: StoreSharing> LinkedList<T, S> {
     /// Tries to append the nodes from `other` to `self`.
     ///
     /// On success, the nodes are transferred and `other` is left empty. On failure, `self` and `other` are unmodified.
@@ -407,7 +407,7 @@ impl<T, S: SharingStore> LinkedList<T, S> {
     /// Panics if `at > self.len()`.
     pub fn split_off(&mut self, at: usize) -> Self
     where
-        S: SharingStore<SharingError = !>,
+        S: StoreSharing<SharingError = !>,
     {
         self.try_split_off(at).into_ok()
     }

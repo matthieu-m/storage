@@ -293,7 +293,7 @@ pub unsafe trait StorePinning: StoreStable {}
 ///
 /// Implementers of this trait must guarantee that a handle created by one part of a sharing set may be used with any
 /// other part: resolved, deallocated, grown, or shrunk.
-pub unsafe trait SharingStore: StorePinning {
+pub unsafe trait StoreSharing: StorePinning {
     /// Error returned if sharing is not currently possible.
     type SharingError;
 

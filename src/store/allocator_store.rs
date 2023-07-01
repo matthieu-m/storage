@@ -11,7 +11,7 @@ use alloc::alloc::Global;
 use crate::interface::{Store, StoreDangling, StoreMultiple, StorePinning, StoreStable};
 
 #[cfg(feature = "alloc")]
-use crate::interface::SharingStore;
+use crate::interface::StoreSharing;
 
 unsafe impl<A> const StoreDangling for A
 where
@@ -116,7 +116,7 @@ unsafe impl<A> StorePinning for A where A: Allocator {}
 //  Safety:
 //  -   `Allocator` are always sharing, today.
 #[cfg(feature = "alloc")]
-unsafe impl SharingStore for Global {
+unsafe impl StoreSharing for Global {
     type SharingError = !;
 
     fn is_sharing_with(&self, _other: &Self) -> bool {

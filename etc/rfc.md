@@ -856,7 +856,7 @@ There are at least 2 possibilities, here:
 
 -   Add a requirement on `PartialEq` implementation for `Allocator` and `Store` that comparing equal means that they are
     clones or copies of each others.
--   Add a separate `SharingStore` trait -- see future possibilities.
+-   Add a separate `StoreSharing` trait -- see future possibilities.
 
 It should be noted that `dyn` usage of `Allocator` and `Store` suffers from the requirement of using unrelated traits as
 it is not possible to have a `dyn Allocator + Clone + PartialEq` trait today, though those traits can be implemented for
@@ -896,17 +896,17 @@ would still be possible to initialize the instance of `Store` with a random seed
 
 #   Future Possibilities
 
-##  SharingStore
+##  StoreSharing
 
 One (other) underdevelopped aspect of the `Allocator` API at the moment is the handling of fungibility of pointers, that
 is the description -- in trait -- of whether a pointer allocated by one `Allocator` can be grown, shrunk, or deallocated
 by another instance of `Allocator`. The immediate consequence is that `Rc` is only `Clone` for `Global`, and the
 `LinkedList::append` method is similarly only available for `Global` allocator.
 
-A possible future extension for the Storage proposal is the introduction of the `SharingStore` trait:
+A possible future extension for the Storage proposal is the introduction of the `StoreSharing` trait:
 
 ```rust
-trait SharingStore: StorePinning {
+trait StoreSharing: StorePinning {
     type SharingError;
 
     fn is_sharing_with(&self, other: &Self) -> bool;
