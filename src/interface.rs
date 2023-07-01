@@ -38,21 +38,7 @@ use core::{
 ///
 /// A specific implementation of Store may provide extended validity guarantees, and should implement the extended
 /// guarantees traits when it does so.
-pub unsafe trait Store {
-    /// A Handle to memory allocated by the instance of Store which creates it.
-    type Handle: Copy;
-
-    /// Creates a dangling handle.
-    ///
-    /// The one method of `Store` which may be called with a dangling handle is the `Store::resolve` method. The pointer
-    /// so obtained is guaranteed to be at least aligned according to `alignment`, though it remains invalid and cannot
-    /// be dereferenced.
-    ///
-    /// For all other purposes, a dangling handle is never valid, and thus cannot be deallocated, grown, nor shrunk...
-    /// Furthermore there is no explicit way to distinguish whether a handle is dangling, or not. It is up to the user
-    /// to remember whether a given handle is dangling, valid, or used to be valid but was invalidated.
-    fn dangling(&self, alignment: Alignment) -> Result<Self::Handle, AllocError>;
-
+pub unsafe trait Store: StoreDangling {
     /// Resolves the `handle` into a pointer to the first byte of the associated block of memory.
     ///
     /// Unless `self` implements `StoreStable`, all previously resolved pointers from different handles may be
@@ -219,6 +205,36 @@ pub unsafe trait Store {
 
         Ok((handle, new_size))
     }
+}
+
+/// A base for Store, introducing the handle type, and the ability to allocate dangling handles.
+///
+/// This trait is separate from the main Store trait to allow `const StoreDangling` implementation even when the `Store`
+/// implementation itself cannot be `const`.
+///
+/// #   Safety
+///
+/// Implementers of this trait must guarantee that:
+///
+/// -   A dangling handle produced by this trait can be safely resolved by the matching `Store::resolve` implementation.
+/// -   The resolved pointer of such an operation will always satisfy the specified alignment.
+///
+/// No guarantee is provided that the resolved pointer may be safely dereferenced, it may be invalid.
+#[const_trait]
+pub unsafe trait StoreDangling {
+    /// A Handle to memory allocated by the instance of Store which creates it.
+    type Handle: Copy;
+
+    /// Creates a dangling handle.
+    ///
+    /// The one method of `Store` which may be called with a dangling handle is the `Store::resolve` method. The pointer
+    /// so obtained is guaranteed to be at least aligned according to `alignment`, though it remains invalid and cannot
+    /// be dereferenced.
+    ///
+    /// For all other purposes, a dangling handle is never valid, and thus cannot be deallocated, grown, nor shrunk...
+    /// Furthermore there is no explicit way to distinguish whether a handle is dangling, or not. It is up to the user
+    /// to remember whether a given handle is dangling, valid, or used to be valid but was invalidated.
+    fn dangling(&self, alignment: Alignment) -> Result<Self::Handle, AllocError>;
 }
 
 /// A refinement of `Store` which does not invalidate handles on allocation.

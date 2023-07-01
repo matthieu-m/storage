@@ -9,7 +9,11 @@ use core::{
 #[cfg(feature = "coercible-metadata")]
 use core::ops::CoerceUnsized;
 
-use crate::{alloc, extension::typed_metadata::TypedMetadata, interface::Store};
+use crate::{
+    alloc,
+    extension::typed_metadata::TypedMetadata,
+    interface::{Store, StoreDangling},
+};
 
 /// Arbitrary typed handle, for type safety, and coercion.
 ///
@@ -25,9 +29,9 @@ impl<T, H: Copy> TypedHandle<T, H> {
     ///
     /// Calls `handle_alloc_error` if the creation of the handle fails.
     #[inline(always)]
-    pub fn dangling<S>(store: &S) -> Self
+    pub const fn dangling<S>(store: &S) -> Self
     where
-        S: Store<Handle = H>,
+        S: ~const StoreDangling<Handle = H>,
     {
         let Ok(this) = Self::try_dangling(store) else {
             alloc::handle_alloc_error(Layout::new::<T>())
@@ -40,12 +44,15 @@ impl<T, H: Copy> TypedHandle<T, H> {
     ///
     /// Returns `AllocError` on failure.
     #[inline(always)]
-    pub fn try_dangling<S>(store: &S) -> Result<Self, AllocError>
+    pub const fn try_dangling<S>(store: &S) -> Result<Self, AllocError>
     where
-        S: Store<Handle = H>,
+        S: ~const StoreDangling<Handle = H>,
     {
-        let handle = store.dangling(Alignment::of::<T>())?;
-        let metadata = TypedMetadata::default();
+        let Ok(handle) = store.dangling(Alignment::of::<T>()) else {
+            return Err(AllocError)
+        };
+
+        let metadata = TypedMetadata::new();
 
         Ok(Self { handle, metadata })
     }
@@ -295,7 +302,7 @@ impl<T, H: Copy> TypedHandle<[T], H> {
 
         self.handle = handle;
 
-        self.metadata = TypedMetadata::new(new_size);
+        self.metadata = TypedMetadata::from_metadata(new_size);
 
         Ok(())
     }
@@ -328,7 +335,7 @@ impl<T, H: Copy> TypedHandle<[T], H> {
 
         self.handle = handle;
 
-        self.metadata = TypedMetadata::new(new_size);
+        self.metadata = TypedMetadata::from_metadata(new_size);
 
         Ok(())
     }
@@ -360,7 +367,7 @@ impl<T, H: Copy> TypedHandle<[T], H> {
 
         self.handle = handle;
 
-        self.metadata = TypedMetadata::new(new_size);
+        self.metadata = TypedMetadata::from_metadata(new_size);
 
         Ok(())
     }

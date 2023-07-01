@@ -6,7 +6,7 @@ use core::{alloc::AllocError, cmp, fmt, hash, mem, ptr};
 
 use crate::{
     extension::typed::TypedHandle,
-    interface::{StoreMultiple, SharingStore, StoreStable, Store},
+    interface::{SharingStore, Store, StoreDangling, StoreMultiple, StoreStable},
 };
 
 /// A singly-linked list.
@@ -28,7 +28,10 @@ impl<T, S: Store> LinkedList<T, S> {
     }
 
     /// Creates a new, empty, list with the specified `store`.
-    pub fn new_in(store: S) -> Self {
+    pub const fn new_in(store: S) -> Self
+    where
+        S: ~const StoreDangling,
+    {
         let length = 0;
         let head = NodeHandle::dangling(&store);
         let tail = NodeHandle::dangling(&store);
@@ -42,12 +45,12 @@ impl<T, S: Store> LinkedList<T, S> {
     }
 
     /// Returns whether the list is empty, or not.
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.length == 0
     }
 
     /// Returns the number of elements in the list.
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.length
     }
 

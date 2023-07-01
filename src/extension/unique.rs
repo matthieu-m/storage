@@ -7,7 +7,7 @@ use core::ops::CoerceUnsized;
 
 use crate::{
     extension::{typed::TypedHandle, typed_metadata::TypedMetadata},
-    interface::Store,
+    interface::{Store, StoreDangling},
 };
 
 /// A typed, unique handle.
@@ -18,9 +18,9 @@ impl<T, H: Copy> UniqueHandle<T, H> {
     ///
     /// Calls `handle_alloc_error` on allocation failure.
     #[inline(always)]
-    pub fn dangling<S>(store: &S) -> Self
+    pub const fn dangling<S>(store: &S) -> Self
     where
-        S: Store<Handle = H>,
+        S: ~const StoreDangling<Handle = H>,
     {
         Self(TypedHandle::dangling(store))
     }
@@ -29,11 +29,15 @@ impl<T, H: Copy> UniqueHandle<T, H> {
     ///
     /// Returns an error on allocation failure.
     #[inline(always)]
-    pub fn try_dangling<S>(store: &S) -> Result<Self, AllocError>
+    pub const fn try_dangling<S>(store: &S) -> Result<Self, AllocError>
     where
-        S: Store<Handle = H>,
+        S: ~const StoreDangling<Handle = H>,
     {
-        TypedHandle::try_dangling(store).map(Self)
+        let Ok(handle) = TypedHandle::try_dangling(store) else {
+            return Err(AllocError)
+        };
+
+        Ok(Self(handle))
     }
 
     /// Creates a new handle, pointing to a `T`.

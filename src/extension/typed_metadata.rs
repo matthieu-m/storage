@@ -22,8 +22,8 @@ mod implementation {
     }
 
     impl<T: ?Sized> TypedMetadata<T> {
-        /// Creates a new Typed metadata.
-        pub fn new(metadata: <T as Pointee>::Metadata) -> Self {
+        /// Creates a new instance from the given metadata.
+        pub const fn from_metadata(metadata: <T as Pointee>::Metadata) -> Self {
             #[allow(clippy::let_unit_value)]
             let _self_is_always_sized = ();
 
@@ -34,7 +34,7 @@ mod implementation {
         }
 
         /// Retrieves the metadata.
-        pub fn get(&self) -> <T as Pointee>::Metadata {
+        pub const fn get(&self) -> <T as Pointee>::Metadata {
             self.metadata
         }
 
@@ -71,12 +71,12 @@ mod implementation {
 
     impl<T: ?Sized> TypedMetadata<T> {
         /// Creates a new Typed metadata.
-        pub fn new(metadata: <T as Pointee>::Metadata) -> Self {
+        pub const fn from_metadata(metadata: <T as Pointee>::Metadata) -> Self {
             Self(NonNull::from_raw_parts(NonNull::dangling(), metadata))
         }
 
         /// Retrieves the metadata.
-        pub fn get(&self) -> <T as Pointee>::Metadata {
+        pub const fn get(&self) -> <T as Pointee>::Metadata {
             self.0.to_raw_parts().1
         }
 
@@ -92,6 +92,13 @@ mod implementation {
     #[cfg(feature = "coercible-metadata")]
     impl<T: ?Sized, U: ?Sized> CoerceUnsized<TypedMetadata<U>> for TypedMetadata<T> where T: Unsize<U> {}
 } // mod implementation
+
+impl<T> TypedMetadata<T> {
+    /// Creates a new instance.
+    pub const fn new() -> Self {
+        Self::from_metadata(())
+    }
+}
 
 impl<T: ?Sized> Clone for TypedMetadata<T> {
     fn clone(&self) -> Self {
@@ -109,12 +116,12 @@ impl<T: ?Sized> fmt::Debug for TypedMetadata<T> {
 
 impl<T> Default for TypedMetadata<T> {
     fn default() -> Self {
-        Self::new(())
+        Self::from_metadata(())
     }
 }
 
 impl<T> From<usize> for TypedMetadata<[T]> {
     fn from(value: usize) -> Self {
-        Self::new(value)
+        Self::from_metadata(value)
     }
 }

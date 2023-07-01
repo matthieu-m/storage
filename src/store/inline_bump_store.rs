@@ -12,7 +12,7 @@ use core::{
     ptr::{self, Alignment, NonNull},
 };
 
-use crate::interface::{StoreMultiple, StoreStable, Store};
+use crate::interface::{Store, StoreDangling, StoreMultiple, StoreStable};
 
 /// An implementation of `Store` providing a single, inline, block of memory.
 ///
@@ -48,9 +48,10 @@ where
     }
 }
 
-unsafe impl<H, T> Store for InlineBumpStore<H, T>
+//  Cannot be const, because TryFrom is not marked #[const_trait].
+unsafe impl<H, T> StoreDangling for InlineBumpStore<H, T>
 where
-    H: Copy + TryFrom<usize> + TryInto<usize>,
+    H: Copy + TryFrom<usize>,
 {
     type Handle = H;
 
@@ -63,7 +64,12 @@ where
 
         Self::from_offset(alignment.as_usize())
     }
+}
 
+unsafe impl<H, T> Store for InlineBumpStore<H, T>
+where
+    H: Copy + TryFrom<usize> + TryInto<usize>,
+{
     fn allocate(&self, layout: Layout) -> Result<(Self::Handle, usize), AllocError> {
         let (result, new_watermark) = Self::compute_offset(self.watermark.get(), layout)?;
         self.watermark.set(new_watermark);

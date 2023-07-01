@@ -15,7 +15,7 @@ use oorandom::Rand32;
 
 use crate::{
     extension::{typed::TypedHandle, typed_metadata::TypedMetadata},
-    interface::{StoreMultiple, StoreStable, Store},
+    interface::{Store, StoreMultiple, StoreStable},
 };
 
 /// A Skip List, with minimal memory usage.

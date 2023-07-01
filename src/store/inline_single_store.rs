@@ -10,7 +10,7 @@ use core::{
     ptr::{self, Alignment, NonNull},
 };
 
-use crate::interface::{StoreStable, Store};
+use crate::interface::{Store, StoreDangling, StoreStable};
 
 /// An implementation of `Store` providing a single, inline, block of memory.
 ///
@@ -23,17 +23,19 @@ impl<T> Default for InlineSingleStore<T> {
     }
 }
 
-unsafe impl<T> Store for InlineSingleStore<T> {
+unsafe impl<T> const StoreDangling for InlineSingleStore<T> {
     type Handle = ();
 
     fn dangling(&self, alignment: Alignment) -> Result<Self::Handle, AllocError> {
-        if alignment <= Alignment::of::<T>() {
+        if alignment.as_usize() <= Alignment::of::<T>().as_usize() {
             Ok(())
         } else {
             Err(AllocError)
         }
     }
+}
 
+unsafe impl<T> Store for InlineSingleStore<T> {
     fn allocate(&self, layout: Layout) -> Result<(Self::Handle, usize), AllocError> {
         Self::validate_layout(layout)?;
 

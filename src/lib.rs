@@ -12,6 +12,8 @@
 #![feature(allocator_api)]
 #![feature(alloc_layout_extra)]
 #![feature(coerce_unsized)]
+#![feature(const_refs_to_cell)]
+#![feature(const_trait_impl)]
 #![feature(hasher_prefixfree_extras)]
 #![feature(layout_for_ptr)]
 #![feature(maybe_uninit_write_slice)]

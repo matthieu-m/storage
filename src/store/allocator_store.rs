@@ -8,12 +8,12 @@ use core::{
 #[cfg(feature = "alloc")]
 use alloc::alloc::Global;
 
-use crate::interface::{StoreMultiple, StorePinning, StoreStable, Store};
+use crate::interface::{Store, StoreDangling, StoreMultiple, StorePinning, StoreStable};
 
 #[cfg(feature = "alloc")]
 use crate::interface::SharingStore;
 
-unsafe impl<A> Store for A
+unsafe impl<A> const StoreDangling for A
 where
     A: Allocator,
 {
@@ -26,7 +26,12 @@ where
         //  -   Non-null, since `alignment` is non-zero.
         Ok(unsafe { NonNull::new_unchecked(pointer) })
     }
+}
 
+unsafe impl<A> Store for A
+where
+    A: Allocator,
+{
     fn allocate(&self, layout: Layout) -> Result<(Self::Handle, usize), AllocError> {
         Allocator::allocate(self, layout).map(|slice| (slice.as_non_null_ptr(), slice.len()))
     }
