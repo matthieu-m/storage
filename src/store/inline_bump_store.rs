@@ -12,7 +12,7 @@ use core::{
     ptr::{self, Alignment, NonNull},
 };
 
-use crate::interface::{MultipleStore, StableStore, Store};
+use crate::interface::{StoreMultiple, StoreStable, Store};
 
 /// An implementation of `Store` providing a single, inline, block of memory.
 ///
@@ -138,11 +138,11 @@ where
 
 //  Safety:
 //  -   Handles remain valid across all operations on `self`.
-unsafe impl<H, T> MultipleStore for InlineBumpStore<H, T> where H: Copy + TryFrom<usize> + TryInto<usize> {}
+unsafe impl<H, T> StoreMultiple for InlineBumpStore<H, T> where H: Copy + TryFrom<usize> + TryInto<usize> {}
 
 //  Safety:
 //  -   `self.resolve(handle)` always returns the same address, as long as `self` doesn't move.
-unsafe impl<H, T> StableStore for InlineBumpStore<H, T> where H: Copy + TryFrom<usize> + TryInto<usize> {}
+unsafe impl<H, T> StoreStable for InlineBumpStore<H, T> where H: Copy + TryFrom<usize> + TryInto<usize> {}
 
 impl<H, T> fmt::Debug for InlineBumpStore<H, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {

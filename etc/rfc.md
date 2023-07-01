@@ -42,14 +42,14 @@ The `Store` API is very closely related to the `Allocator` API, and largely mirr
 
 -   The `Handle` returned is opaque, and must be resolved into pointers by the instance of `Store` which allocated it,
     in general.
--   Unless a specific store type implements `MultipleStore`, any handle it allocated may be invalidated when the store
+-   Unless a specific store type implements `StoreMultiple`, any handle it allocated may be invalidated when the store
     performs a new allocation.
--   Unless a specific store type implements `StableStore`, there is no guarantee that resolving the same handle after
+-   Unless a specific store type implements `StoreStable`, there is no guarantee that resolving the same handle after
     calling another method on the API -- including `resolve` with a different handle -- will return the same pointer. In
     particular, a call to `resolve` may lead to cache-eviction (think LRU), an allocation may result in reallocating the
     entire block of memory used underneath by the `Store`, and a deallocation may result in consolidating existing
     allocations (GC style).
--   Unless a specific store type implements `PinningStore`, there is no guarantee that resolving the same handle after
+-   Unless a specific store type implements `StorePinning`, there is no guarantee that resolving the same handle after
     moving the store will return the same pointer.
 
 
@@ -400,7 +400,7 @@ unsafe impl<T> Store for InlineSingleStore<T> {
 
 //  Safety:
 //  -   `self.resolve(handle)` always returns the same address, as long as `self` doesn't move.
-unsafe impl<T> StableStore for InlineSingleStore<T> {}
+unsafe impl<T> StoreStable for InlineSingleStore<T> {}
 
 impl<T> fmt::Debug for InlineSingleStore<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
@@ -428,8 +428,8 @@ impl<T> InlineSingleStore<T> {
 
 And that's it!
 
-I need not implement `MultipleStore`, and thus do not have to track allocations and deallocations. And I need not
-implement `PinningStore`, and thus do not have to ensure memory address stability across moves.
+I need not implement `StoreMultiple`, and thus do not have to track allocations and deallocations. And I need not
+implement `StorePinning`, and thus do not have to ensure memory address stability across moves.
 
 More examples of `Store` can be found at https://github.com/matthieu-m/storage/tree/main/src/store, including an inline
 bump store.
@@ -505,15 +505,15 @@ The `Store` trait is supplemented by 3 additional marker traits, providing extra
 ```rust
 /// A refinement of `Store` which does not invalidate existing handles on allocation, and does not invalidate
 /// unrelated existing handles on deallocation.
-pub unsafe trait MultipleStore: Store {}
+pub unsafe trait StoreMultiple: Store {}
 
 /// A refinement of `Store` which does not invalidate existing pointers on allocation, resolution, or deallocation, but
 /// may invalidate them on moves.
-pun unsafe trait StableStore: Store {}
+pun unsafe trait StoreStable: Store {}
 
 /// A refinement of `Store` which does not invalidate existing pointers, not even on moves. That is, this refinement
 /// guarantees that the blocks of memory are pinned in memory.
-pub unsafe trait PinningStore: StableStore {}
+pub unsafe trait StorePinning: StoreStable {}
 ```
 
 
@@ -716,9 +716,9 @@ standard library... and duplicate their documentation. Pure overhead.
 
 As a reminder, there are 3 marker traits:
 
--   `MultipleStore`: allows concurrent allocations from a single store.
--   `StableStore`: ensures existing pointers remain valid across calls to the API methods.
--   `PinningStore`: ensures existing pointers remain valid even across moves.
+-   `StoreMultiple`: allows concurrent allocations from a single store.
+-   `StoreStable`: ensures existing pointers remain valid across calls to the API methods.
+-   `StorePinning`: ensures existing pointers remain valid even across moves.
 
 
 Those traits could be merged, or further split.
@@ -906,7 +906,7 @@ by another instance of `Allocator`. The immediate consequence is that `Rc` is on
 A possible future extension for the Storage proposal is the introduction of the `SharingStore` trait:
 
 ```rust
-trait SharingStore: PinningStore {
+trait SharingStore: StorePinning {
     type SharingError;
 
     fn is_sharing_with(&self, other: &Self) -> bool;
@@ -926,7 +926,7 @@ with any of the stores of the set, in any way, and as long as one store of the s
 store of the set does not invalidate the handles. Informally, the "backing" memory and metadata can be thought of as
 being reference-counted.
 
-The requirement of `PinningStore` is necessary as moving any one instance should not invalidate the pointers resolved by
+The requirement of `StorePinning` is necessary as moving any one instance should not invalidate the pointers resolved by
 other instances of the set, and the `SharingError` type allows modelling potentially-sharing stores, such as a small
 store which cannot be shared if its handles currently point to inline memory.
 
@@ -973,8 +973,8 @@ On the other hand, those two methods guarantee:
 
 -   Proper typing: if the handle is valid, and a value exists, then that value is of type `T`.
 -   Proper borrow-checking: the handle is the unique entry point to the instance of `T`, hence the name.
--   Proper pinning: even if the store does not implement `PinningStore`, borrowing it ensures that it cannot be moved
-    nor dropped. If the store implements `StableStore`, this means that the result of `resolve` and `resolve_mut` can be
+-   Proper pinning: even if the store does not implement `StorePinning`, borrowing it ensures that it cannot be moved
+    nor dropped. If the store implements `StoreStable`, this means that the result of `resolve` and `resolve_mut` can be
     used without fear of invalidation.
 
 And that's pretty good, given how straightforward the code is.

@@ -15,7 +15,7 @@ use oorandom::Rand32;
 
 use crate::{
     extension::{typed::TypedHandle, typed_metadata::TypedMetadata},
-    interface::{MultipleStore, StableStore, Store},
+    interface::{StoreMultiple, StoreStable, Store},
 };
 
 /// A Skip List, with minimal memory usage.
@@ -109,7 +109,7 @@ impl<K, V, S: Store> SkipList<K, V, S> {
     }
 }
 
-impl<K, V, S: MultipleStore + StableStore> SkipList<K, V, S>
+impl<K, V, S: StoreMultiple + StoreStable> SkipList<K, V, S>
 where
     K: Ord,
 {
@@ -317,7 +317,7 @@ impl<K, V, S: Store> Drop for SkipList<K, V, S> {
 
 impl<K, V, S> Default for SkipList<K, V, S>
 where
-    S: MultipleStore + Default,
+    S: StoreMultiple + Default,
 {
     fn default() -> Self {
         Self::new()
@@ -359,7 +359,7 @@ impl<K, V, S: Store> SkipList<K, V, S> {
     }
 }
 
-impl<K, V, S: MultipleStore + StableStore> SkipList<K, V, S>
+impl<K, V, S: StoreMultiple + StoreStable> SkipList<K, V, S>
 where
     K: Ord,
 {

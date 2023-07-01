@@ -19,7 +19,7 @@ use core::{
 ///
 /// -   All handles allocated by an instance of `Store` may be invalidated when calling `Store::allocate` or
 ///     `Store::allocate_zeroed` on this instance of `Store`. Handles are only guaranteed to remain valid across
-///     calls to these methods for instances also implementing `MultipleStore`.
+///     calls to these methods for instances also implementing `StoreMultiple`.
 /// -   A handle is immediately invalidated when used as an argument to the `Store::deallocate` method.
 /// -   A handle is invalidated when used as an argument to the `Store::grow`, `Store::grow_zeroed`, or
 ///     `Store::shrink` and these methods succeed.
@@ -28,13 +28,13 @@ use core::{
 ///
 /// -   All pointers resolved by an instance of `Store` may be invalidated when dropping this instance of `Store`.
 /// -   All pointers resolved by an instance of `Store` may be invalidated when moving this instance of `Store`.
-///     Pointers are only guaranteed to remain valid across moves for instances also implementing `PinningStore`.
+///     Pointers are only guaranteed to remain valid across moves for instances also implementing `StorePinning`.
 /// -   All pointers resolved by an instance of `Store` may be invalidated when calling `Store::allocate`,
 ///     `Store::deallocate`, `Store::grow`, `Store::shrink`, or their zeroed variants. Pointers are only
-///     guaranteed to remain valid across those calls for instances also implementing `StableStore`.
+///     guaranteed to remain valid across those calls for instances also implementing `StoreStable`.
 /// -   All pointers resolved by an instance of `Store` from a _different_ handle may be invalidated when calling
 ///     `Store::resolve`. Pointers from different handles are only guaranteed to remain valid across those calls for
-///     instances also implementing `StableStore`.
+///     instances also implementing `StoreStable`.
 ///
 /// A specific implementation of Store may provide extended validity guarantees, and should implement the extended
 /// guarantees traits when it does so.
@@ -55,7 +55,7 @@ pub unsafe trait Store {
 
     /// Resolves the `handle` into a pointer to the first byte of the associated block of memory.
     ///
-    /// Unless `self` implements `StableStore`, all previously resolved pointers from different handles may be
+    /// Unless `self` implements `StoreStable`, all previously resolved pointers from different handles may be
     /// invalidated.
     ///
     /// #   Safety
@@ -71,9 +71,9 @@ pub unsafe trait Store {
     /// On success, returns a `Handle` to a block of memory meeting the size and alignment guarantees of `Layout` and
     /// actual size of the block of memory.
     ///
-    /// Unless `self` implements `MultipleStore`, all previously allocated handles may be invalidated.
+    /// Unless `self` implements `StoreMultiple`, all previously allocated handles may be invalidated.
     ///
-    /// Unless `self` implements `StableStore`, all previously resolved pointers may be invalidated.
+    /// Unless `self` implements `StoreStable`, all previously resolved pointers may be invalidated.
     ///
     /// #   Errors
     ///
@@ -86,9 +86,9 @@ pub unsafe trait Store {
     /// This invalidates `handle` and all its copies, as well as all pointers resolved from `handle` or any of its
     /// copies.
     ///
-    /// Unless `self` implements `MultipleStore`, all previously allocated handles may be invalidated.
+    /// Unless `self` implements `StoreMultiple`, all previously allocated handles may be invalidated.
     ///
-    /// Unless `self` implements `StableStore`, all previously resolved pointers may be invalidated.
+    /// Unless `self` implements `StoreStable`, all previously resolved pointers may be invalidated.
     ///
     /// #   Safety
     ///
@@ -105,9 +105,9 @@ pub unsafe trait Store {
     /// On failure, `handle` and all its copies are still valid, though any pointer resolved from `handle` or any of
     /// its copies may have been invalidated.
     ///
-    /// Unless `self` implements `MultipleStore`, all previously allocated handles may be invalidated.
+    /// Unless `self` implements `StoreMultiple`, all previously allocated handles may be invalidated.
     ///
-    /// Unless `self` implements `StableStore`, all previously resolved pointers may be invalidated.
+    /// Unless `self` implements `StoreStable`, all previously resolved pointers may be invalidated.
     ///
     /// #    Safety
     ///
@@ -135,9 +135,9 @@ pub unsafe trait Store {
     /// On failure, `handle` and all its copies are still valid, though any pointer resolved from `handle` or any of
     /// its copies may have been invalidated.
     ///
-    /// Unless `self` implements `MultipleStore`, all previously allocated handles may be invalidated.
+    /// Unless `self` implements `StoreMultiple`, all previously allocated handles may be invalidated.
     ///
-    /// Unless `self` implements `StableStore`, all previously resolved pointers may be invalidated.
+    /// Unless `self` implements `StoreStable`, all previously resolved pointers may be invalidated.
     ///
     /// #    Safety
     ///
@@ -231,21 +231,21 @@ pub unsafe trait Store {
 /// -   Unrelated existing handles are not invalidated by calls to `grow`, `grow_zeroed`, `shrink`, and `deallocate`.
 ///
 /// This trait provides no guarantee with regard to the stability of resolved pointers, for such guarantees see
-/// `StableStore` and `PinningStore`.
-pub unsafe trait MultipleStore: Store {}
+/// `StoreStable` and `StorePinning`.
+pub unsafe trait StoreMultiple: Store {}
 
 /// A refinement of `Store` which guarantees that the blocks of memory are stable in memory across method calls, but
 /// not necessarily across moves.
 ///
-/// If the blocks of memory should be stable in memory across moves as well, then `PinningStore` is required.
+/// If the blocks of memory should be stable in memory across moves as well, then `StorePinning` is required.
 ///
-/// It is common but not required for implementers of this trait to also implement `MultipleStore`.
+/// It is common but not required for implementers of this trait to also implement `StoreMultiple`.
 ///
 /// #   Safety
 ///
 /// Implementers of this trait must guarantee that a handle always resolve to the same block of memory for as long as
 /// it is valid and the instance of `Store` has not moved.
-pub unsafe trait StableStore: Store {}
+pub unsafe trait StoreStable: Store {}
 
 /// A refinement of `Store` which guarantees that the blocks of memory are pinned in memory.
 ///
@@ -257,7 +257,7 @@ pub unsafe trait StableStore: Store {}
 /// As a corrolary, forgetting the instance of `Store` -- which is moving without dropping -- means that the resolved
 /// pointers will remain pinned until either the instance of `Store` is recovered (from scratch) and dropped, or until
 /// the lifetime bound of the `Store` concrete type (if not `'static`) expires, whichever comes first.
-pub unsafe trait PinningStore: StableStore {}
+pub unsafe trait StorePinning: StoreStable {}
 
 /// A refinement of `Store` which allows multiple instances to share the handles and their associated blocks of memory.
 ///
@@ -272,7 +272,7 @@ pub unsafe trait PinningStore: StableStore {}
 ///
 /// Implementers of this trait must guarantee that a handle created by one part of a sharing set may be used with any
 /// other part: resolved, deallocated, grown, or shrunk.
-pub unsafe trait SharingStore: PinningStore {
+pub unsafe trait SharingStore: StorePinning {
     /// Error returned if sharing is not currently possible.
     type SharingError;
 
@@ -293,13 +293,13 @@ pub unsafe trait SharingStore: PinningStore {
 //  Provided for convenience.
 //
 
-//  If `S` is a `MultipleStore`, then `allocate` doesn't invalidate handles, and thus `grow` and `shrink` can be
+//  If `S` is a `StoreMultiple`, then `allocate` doesn't invalidate handles, and thus `grow` and `shrink` can be
 //  default implemented in terms of `allocate` and `deallocate` -- even if this is not optimal.
 //
 //  Further, `grow_zeroed` can be optimized compared to its default implementation by using `allocate_zeroed`.
 default unsafe impl<S> Store for S
 where
-    S: MultipleStore,
+    S: StoreMultiple,
 {
     default unsafe fn grow(
         &self,
@@ -317,7 +317,7 @@ where
         //  Safety:
         //  -   `handle` has been allocated by `self`, as per the pre-conditions of `grow`.
         //  -   `handle` is valid, as it was valid at beginning of this function as per the pre-conditions of `grow`
-        //      and has not been invalidated by `self.allocate` since `self` is a `MultipleStore`.
+        //      and has not been invalidated by `self.allocate` since `self` is a `StoreMultiple`.
         let current_ptr = unsafe { self.resolve(handle) };
 
         //  Safety:
@@ -337,7 +337,7 @@ where
         //  Safety:
         //  -   `handle` has been allocated by `self`, as per the pre-conditions of `grow`.
         //  -   `handle` is valid, as it was valid at beginning of this function as per the pre-conditions of `grow`
-        //      and has not been invalidated by `self.allocate` since `self` is a `MultipleStore`.
+        //      and has not been invalidated by `self.allocate` since `self` is a `StoreMultiple`.
         //  -   `old_layout` fits `handle`, as per the pre-conditions of `grow`.
         unsafe { self.deallocate(handle, old_layout) };
 
@@ -360,7 +360,7 @@ where
         //  Safety:
         //  -   `handle` has been allocated by `self`, as per the pre-conditions of `shrink`.
         //  -   `handle` is valid, as it was valid at beginning of this function as per the pre-conditions of `shrink`
-        //      and has not been invalidated by `self.allocate` since `self` is a `MultipleStore`.
+        //      and has not been invalidated by `self.allocate` since `self` is a `StoreMultiple`.
         let current_ptr = unsafe { self.resolve(handle) };
 
         //  Safety:
@@ -379,7 +379,7 @@ where
         //  Safety:
         //  -   `handle` has been allocated by `self`, as per the pre-conditions of `shrink`.
         //  -   `handle` is valid, as it was valid at beginning of this function as per the pre-conditions of `shrink`
-        //      and has not been invalidated by `self.allocate` since `self` is a `MultipleStore`.
+        //      and has not been invalidated by `self.allocate` since `self` is a `StoreMultiple`.
         //  -   `old_layout` fits `handle`, as per the pre-conditions of `shrink`.
         unsafe { self.deallocate(handle, old_layout) };
 
@@ -402,7 +402,7 @@ where
         //  Safety:
         //  -   `handle` has been allocated by `self`, as per the pre-conditions of `grow`.
         //  -   `handle` is valid, as it was valid at beginning of this function as per the pre-conditions of `grow`
-        //      and has not been invalidated by `self.allocate` since `self` is a `MultipleStore`.
+        //      and has not been invalidated by `self.allocate` since `self` is a `StoreMultiple`.
         let current_ptr = unsafe { self.resolve(handle) };
 
         //  Safety:
@@ -422,7 +422,7 @@ where
         //  Safety:
         //  -   `handle` has been allocated by `self`, as per the pre-conditions of `grow`.
         //  -   `handle` is valid, as it was valid at beginning of this function as per the pre-conditions of `grow`
-        //      and has not been invalidated by `self.allocate` since `self` is a `MultipleStore`.
+        //      and has not been invalidated by `self.allocate` since `self` is a `StoreMultiple`.
         //  -   `old_layout` fits `handle`, as per the pre-conditions of `grow`.
         unsafe { self.deallocate(handle, old_layout) };
 

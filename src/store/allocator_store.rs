@@ -8,7 +8,7 @@ use core::{
 #[cfg(feature = "alloc")]
 use alloc::alloc::Global;
 
-use crate::interface::{MultipleStore, PinningStore, StableStore, Store};
+use crate::interface::{StoreMultiple, StorePinning, StoreStable, Store};
 
 #[cfg(feature = "alloc")]
 use crate::interface::SharingStore;
@@ -98,15 +98,15 @@ where
 
 //  Safety:
 //  -   `Allocator` does not invalidate existing allocations when allocating.
-unsafe impl<A> MultipleStore for A where A: Allocator {}
+unsafe impl<A> StoreMultiple for A where A: Allocator {}
 
 //  Safety:
 //  -   `Allocator` allocations are pinned.
-unsafe impl<A> StableStore for A where A: Allocator {}
+unsafe impl<A> StoreStable for A where A: Allocator {}
 
 //  Safety:
 //  -   `Allocator` allocations are pinned.
-unsafe impl<A> PinningStore for A where A: Allocator {}
+unsafe impl<A> StorePinning for A where A: Allocator {}
 
 //  Safety:
 //  -   `Allocator` are always sharing, today.

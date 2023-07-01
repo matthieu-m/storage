@@ -6,7 +6,7 @@ use core::{alloc::AllocError, cmp, fmt, hash, mem, ptr};
 
 use crate::{
     extension::typed::TypedHandle,
-    interface::{MultipleStore, SharingStore, StableStore, Store},
+    interface::{StoreMultiple, SharingStore, StoreStable, Store},
 };
 
 /// A singly-linked list.
@@ -209,7 +209,7 @@ impl<T, S: Store> LinkedList<T, S> {
     }
 }
 
-impl<T, S: MultipleStore> LinkedList<T, S> {
+impl<T, S: StoreMultiple> LinkedList<T, S> {
     /// Pushes an element to the front of the list, unless memory allocation fails.
     pub fn try_push_front(&mut self, element: T) -> Result<(), AllocError> {
         let node = Node {
@@ -259,7 +259,7 @@ impl<T, S: MultipleStore> LinkedList<T, S> {
     }
 }
 
-impl<T, S: StableStore> LinkedList<T, S> {
+impl<T, S: StoreStable> LinkedList<T, S> {
     /// Returns an iterator of references to the elements.
     pub fn iter(&self) -> Iter<'_, T, S> {
         Iter {
@@ -294,7 +294,7 @@ impl<T, S: StableStore> LinkedList<T, S> {
         let node = unsafe { self.head.resolve(&self.store) };
 
         //  It is safe to return the reference, as it extends the borrow of `self`, guaranteeing that `self.store` will
-        //  not be moved, in addition to `StableStore` guaranteeing that no operation on `self.store` will invalidate
+        //  not be moved, in addition to `StoreStable` guaranteeing that no operation on `self.store` will invalidate
         //  either handle or pointer.
         Some(&node.element)
     }
@@ -313,7 +313,7 @@ impl<T, S: StableStore> LinkedList<T, S> {
         let node = unsafe { self.tail.resolve(&self.store) };
 
         //  It is safe to return the reference, as it extends the borrow of `self`, guaranteeing that `self.store` will
-        //  not be moved, in addition to `StableStore` guaranteeing that no operation on `self.store` will invalidate
+        //  not be moved, in addition to `StoreStable` guaranteeing that no operation on `self.store` will invalidate
         //  either handle or pointer.
         Some(&node.element)
     }
@@ -431,7 +431,7 @@ impl<T, S: SharingStore> LinkedList<T, S> {
     }
 }
 
-impl<T: Clone, S: MultipleStore + StableStore + Default> Clone for LinkedList<T, S> {
+impl<T: Clone, S: StoreMultiple + StoreStable + Default> Clone for LinkedList<T, S> {
     fn clone(&self) -> Self {
         let mut result = Self::default();
 
@@ -443,7 +443,7 @@ impl<T: Clone, S: MultipleStore + StableStore + Default> Clone for LinkedList<T,
     }
 }
 
-impl<T: fmt::Debug, S: StableStore> fmt::Debug for LinkedList<T, S> {
+impl<T: fmt::Debug, S: StoreStable> fmt::Debug for LinkedList<T, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         f.debug_list().entries(self).finish()
     }
@@ -482,8 +482,8 @@ where
 impl<T, S, OS> cmp::PartialEq<LinkedList<T, OS>> for LinkedList<T, S>
 where
     T: cmp::PartialEq,
-    S: StableStore,
-    OS: StableStore,
+    S: StoreStable,
+    OS: StoreStable,
 {
     fn eq(&self, other: &LinkedList<T, OS>) -> bool {
         self.len() == other.len() && self.iter().eq(other)
@@ -493,11 +493,11 @@ where
 impl<T, S> cmp::Eq for LinkedList<T, S>
 where
     T: cmp::Eq,
-    S: StableStore,
+    S: StoreStable,
 {
 }
 
-impl<T: hash::Hash, S: StableStore> hash::Hash for LinkedList<T, S> {
+impl<T: hash::Hash, S: StoreStable> hash::Hash for LinkedList<T, S> {
     fn hash<H: hash::Hasher>(&self, state: &mut H) {
         state.write_length_prefix(self.len());
 
@@ -510,8 +510,8 @@ impl<T: hash::Hash, S: StableStore> hash::Hash for LinkedList<T, S> {
 impl<T, S, OS> cmp::PartialOrd<LinkedList<T, OS>> for LinkedList<T, S>
 where
     T: cmp::PartialOrd,
-    S: StableStore,
-    OS: StableStore,
+    S: StoreStable,
+    OS: StoreStable,
 {
     fn partial_cmp(&self, other: &LinkedList<T, OS>) -> Option<cmp::Ordering> {
         self.iter().partial_cmp(other)
@@ -521,7 +521,7 @@ where
 impl<T, S> cmp::Ord for LinkedList<T, S>
 where
     T: cmp::Ord,
-    S: StableStore,
+    S: StoreStable,
 {
     fn cmp(&self, other: &LinkedList<T, S>) -> cmp::Ordering {
         self.iter().cmp(other)
@@ -532,7 +532,7 @@ where
 //  Conversion
 //
 
-impl<T, S: MultipleStore + Default, const N: usize> TryFrom<[T; N]> for LinkedList<T, S> {
+impl<T, S: StoreMultiple + Default, const N: usize> TryFrom<[T; N]> for LinkedList<T, S> {
     type Error = AllocError;
 
     fn try_from(value: [T; N]) -> Result<Self, Self::Error> {
@@ -550,7 +550,7 @@ impl<T, S: MultipleStore + Default, const N: usize> TryFrom<[T; N]> for LinkedLi
 //  Iteration
 //
 
-impl<'a, T: 'a + Clone, S: MultipleStore> Extend<&'a T> for LinkedList<T, S> {
+impl<'a, T: 'a + Clone, S: StoreMultiple> Extend<&'a T> for LinkedList<T, S> {
     fn extend<I>(&mut self, iter: I)
     where
         I: IntoIterator<Item = &'a T>,
@@ -559,7 +559,7 @@ impl<'a, T: 'a + Clone, S: MultipleStore> Extend<&'a T> for LinkedList<T, S> {
     }
 }
 
-impl<T, S: MultipleStore> Extend<T> for LinkedList<T, S> {
+impl<T, S: StoreMultiple> Extend<T> for LinkedList<T, S> {
     fn extend<I>(&mut self, iter: I)
     where
         I: IntoIterator<Item = T>,
@@ -570,7 +570,7 @@ impl<T, S: MultipleStore> Extend<T> for LinkedList<T, S> {
     }
 }
 
-impl<T, S: MultipleStore + Default> FromIterator<T> for LinkedList<T, S> {
+impl<T, S: StoreMultiple + Default> FromIterator<T> for LinkedList<T, S> {
     fn from_iter<I>(iter: I) -> Self
     where
         I: IntoIterator<Item = T>,
@@ -585,7 +585,7 @@ impl<T, S: MultipleStore + Default> FromIterator<T> for LinkedList<T, S> {
     }
 }
 
-impl<T, S: StableStore> IntoIterator for LinkedList<T, S> {
+impl<T, S: StoreStable> IntoIterator for LinkedList<T, S> {
     type Item = T;
     type IntoIter = IntoIter<T, S>;
 
@@ -594,7 +594,7 @@ impl<T, S: StableStore> IntoIterator for LinkedList<T, S> {
     }
 }
 
-impl<'a, T, S: StableStore> IntoIterator for &'a LinkedList<T, S> {
+impl<'a, T, S: StoreStable> IntoIterator for &'a LinkedList<T, S> {
     type Item = &'a T;
     type IntoIter = Iter<'a, T, S>;
 
@@ -603,7 +603,7 @@ impl<'a, T, S: StableStore> IntoIterator for &'a LinkedList<T, S> {
     }
 }
 
-impl<'a, T, S: StableStore> IntoIterator for &'a mut LinkedList<T, S> {
+impl<'a, T, S: StoreStable> IntoIterator for &'a mut LinkedList<T, S> {
     type Item = &'a mut T;
     type IntoIter = IterMut<'a, T, S>;
 
@@ -615,7 +615,7 @@ impl<'a, T, S: StableStore> IntoIterator for &'a mut LinkedList<T, S> {
 /// Iterator over a linked list.
 pub struct IntoIter<T, S: Store>(LinkedList<T, S>);
 
-impl<T, S: StableStore> Iterator for IntoIter<T, S> {
+impl<T, S: StoreStable> Iterator for IntoIter<T, S> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -623,7 +623,7 @@ impl<T, S: StableStore> Iterator for IntoIter<T, S> {
     }
 }
 
-impl<T, S: StableStore> DoubleEndedIterator for IntoIter<T, S> {
+impl<T, S: StoreStable> DoubleEndedIterator for IntoIter<T, S> {
     fn next_back(&mut self) -> Option<Self::Item> {
         self.0.pop_back()
     }
@@ -638,7 +638,7 @@ pub struct Iter<'a, T, S: Store> {
     store: &'a S,
 }
 
-impl<'a, T: 'a, S: StableStore> Iterator for Iter<'a, T, S> {
+impl<'a, T: 'a, S: StoreStable> Iterator for Iter<'a, T, S> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -662,7 +662,7 @@ impl<'a, T: 'a, S: StableStore> Iterator for Iter<'a, T, S> {
     }
 }
 
-impl<'a, T: 'a, S: StableStore> DoubleEndedIterator for Iter<'a, T, S> {
+impl<'a, T: 'a, S: StoreStable> DoubleEndedIterator for Iter<'a, T, S> {
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.length == 0 {
             return None;
@@ -693,7 +693,7 @@ pub struct IterMut<'a, T, S: Store> {
     store: &'a S,
 }
 
-impl<'a, T: 'a, S: StableStore> Iterator for IterMut<'a, T, S> {
+impl<'a, T: 'a, S: StoreStable> Iterator for IterMut<'a, T, S> {
     type Item = &'a mut T;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -717,7 +717,7 @@ impl<'a, T: 'a, S: StableStore> Iterator for IterMut<'a, T, S> {
     }
 }
 
-impl<'a, T: 'a, S: StableStore> DoubleEndedIterator for IterMut<'a, T, S> {
+impl<'a, T: 'a, S: StoreStable> DoubleEndedIterator for IterMut<'a, T, S> {
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.length == 0 {
             return None;

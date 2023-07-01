@@ -10,7 +10,7 @@ use core::{
     ptr::{self, Alignment, NonNull},
 };
 
-use crate::interface::{StableStore, Store};
+use crate::interface::{StoreStable, Store};
 
 /// An implementation of `Store` providing a single, inline, block of memory.
 ///
@@ -127,7 +127,7 @@ unsafe impl<T> Store for InlineSingleStore<T> {
 
 //  Safety:
 //  -   `self.resolve(handle)` always returns the same address, as long as `self` doesn't move.
-unsafe impl<T> StableStore for InlineSingleStore<T> {}
+unsafe impl<T> StoreStable for InlineSingleStore<T> {}
 
 impl<T> fmt::Debug for InlineSingleStore<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {

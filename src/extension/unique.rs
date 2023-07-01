@@ -38,7 +38,7 @@ impl<T, H: Copy> UniqueHandle<T, H> {
 
     /// Creates a new handle, pointing to a `T`.
     ///
-    /// Unless `store` implements `MultipleStore`, this invalidates all existing handles of `store`.
+    /// Unless `store` implements `StoreMultiple`, this invalidates all existing handles of `store`.
     #[inline(always)]
     pub fn new<S>(value: T, store: &S) -> Result<Self, AllocError>
     where
@@ -51,7 +51,7 @@ impl<T, H: Copy> UniqueHandle<T, H> {
     ///
     /// The allocated memory is left uninitialized.
     ///
-    /// Unless `store` implements `MultipleStore`, this invalidates all existing handles of `store`.
+    /// Unless `store` implements `StoreMultiple`, this invalidates all existing handles of `store`.
     #[inline(always)]
     pub fn allocate<S>(store: &S) -> Result<Self, AllocError>
     where
@@ -64,7 +64,7 @@ impl<T, H: Copy> UniqueHandle<T, H> {
     ///
     /// The allocated memory is zeroed out.
     ///
-    /// Unless `store` implements `MultipleStore`, this invalidates all existing handles of `store`.
+    /// Unless `store` implements `StoreMultiple`, this invalidates all existing handles of `store`.
     #[inline(always)]
     pub fn allocate_zeroed<S>(store: &S) -> Result<Self, AllocError>
     where
@@ -120,9 +120,9 @@ impl<T: ?Sized, H: Copy> UniqueHandle<T, H> {
     /// -   `self` must still be valid.
     /// -   `self` must be associated to a block of memory containing a valid instance of `T`.
     /// -   The reference is only guaranteed to be valid as long as `self` is valid. Most notably, unless `store`
-    ///     implements `MultipleStore` allocating from `store` will invalidate it.
+    ///     implements `StoreMultiple` allocating from `store` will invalidate it.
     /// -   The reference is only guaranteed to be valid as long as pointers resolved from `self` are not invalidated.
-    ///     Most notably, unless `store` implements `StableStore`, any method call on `store`, including other
+    ///     Most notably, unless `store` implements `StoreStable`, any method call on `store`, including other
     ///     `resolve` calls, may invalidate the reference.
     #[inline(always)]
     pub unsafe fn resolve<'a, S>(&'a self, store: &'a S) -> &'a T
@@ -149,9 +149,9 @@ impl<T: ?Sized, H: Copy> UniqueHandle<T, H> {
     /// -   `self` must still be valid.
     /// -   `self` must be associated to a block of memory containing a valid instance of `T`.
     /// -   The reference is only guaranteed to be valid as long as `self` is valid. Most notably, unless `store`
-    ///     implements `MultipleStore` allocating from `store` will invalidate it.
+    ///     implements `StoreMultiple` allocating from `store` will invalidate it.
     /// -   The reference is only guaranteed to be valid as long as pointers resolved from `self` are not invalidated.
-    ///     Most notably, unless `store` implements `StableStore`, any method call on `store`, including other
+    ///     Most notably, unless `store` implements `StoreStable`, any method call on `store`, including other
     ///     `resolve` calls, may invalidate the reference.
     #[inline(always)]
     pub unsafe fn resolve_mut<'a, S>(&'a mut self, store: &'a S) -> &'a mut T
@@ -177,9 +177,9 @@ impl<T: ?Sized, H: Copy> UniqueHandle<T, H> {
     /// -   `self` must have been allocated by `store`.
     /// -   `self` must still be valid.
     /// -   The pointer is only guaranteed to be valid as long as `self` is valid. Most notably, unless `store`
-    ///     implements `MultipleStore` allocating from `store` will invalidate it.
+    ///     implements `StoreMultiple` allocating from `store` will invalidate it.
     /// -   The pointer is only guaranteed to be valid as long as pointers resolved from `self` are not invalidated.
-    ///     Most notably, unless `store` implements `StableStore`, any method call on `store`, including other
+    ///     Most notably, unless `store` implements `StoreStable`, any method call on `store`, including other
     ///     `resolve` calls, may invalidate the pointer.
     #[inline(always)]
     pub unsafe fn resolve_raw<S>(&self, store: &S) -> NonNull<T>
