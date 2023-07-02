@@ -13,18 +13,38 @@ use crate::interface::{Store, StoreDangling, StoreMultiple, StorePinning, StoreS
 #[cfg(feature = "alloc")]
 use crate::interface::StoreSharing;
 
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct AllocatorHandle(NonNull<u8>);
+
+unsafe impl Send for AllocatorHandle {}
+unsafe impl Sync for AllocatorHandle {}
+
+impl From<NonNull<u8>> for AllocatorHandle {
+    fn from(value: NonNull<u8>) -> Self {
+        Self(value)
+    }
+}
+
+impl From<AllocatorHandle> for NonNull<u8> {
+    fn from(value: AllocatorHandle) -> Self {
+        value.0
+    }
+}
+
 unsafe impl<A> const StoreDangling for A
 where
     A: Allocator,
 {
-    type Handle = NonNull<u8>;
+    type Handle = AllocatorHandle;
 
     fn dangling(&self, alignment: Alignment) -> Result<Self::Handle, AllocError> {
         let pointer = ptr::invalid_mut(alignment.as_usize());
 
         //  Safety:
         //  -   Non-null, since `alignment` is non-zero.
-        Ok(unsafe { NonNull::new_unchecked(pointer) })
+        let pointer = unsafe { NonNull::new_unchecked(pointer) };
+
+        Ok(AllocatorHandle(pointer))
     }
 }
 
@@ -32,19 +52,19 @@ unsafe impl<A> Store for A
 where
     A: Allocator,
 {
+    unsafe fn resolve(&self, handle: Self::Handle) -> NonNull<u8> {
+        handle.into()
+    }
+
     fn allocate(&self, layout: Layout) -> Result<(Self::Handle, usize), AllocError> {
-        Allocator::allocate(self, layout).map(|slice| (slice.as_non_null_ptr(), slice.len()))
+        Allocator::allocate(self, layout).map(|slice| (slice.as_non_null_ptr().into(), slice.len()))
     }
 
     unsafe fn deallocate(&self, handle: Self::Handle, layout: Layout) {
         //  Safety:
         //  -   `handle` is valid, as per the pre-conditions of `deallocate`.
         //  -   `layout` fits, as per the pre-conditions of `deallocate`.
-        unsafe { Allocator::deallocate(self, handle, layout) };
-    }
-
-    unsafe fn resolve(&self, handle: Self::Handle) -> NonNull<u8> {
-        handle
+        unsafe { Allocator::deallocate(self, handle.into(), layout) };
     }
 
     unsafe fn grow(
@@ -58,9 +78,9 @@ where
         //  -   `old_layout` fits, as per the pre-conditions of `grow`.
         //  -   `new_layout.size()` is greater than or equal to `old_layout.size()`, as per the pre-conditions of
         //      `grow`.
-        unsafe {
-            Allocator::grow(self, handle, old_layout, new_layout).map(|slice| (slice.as_non_null_ptr(), slice.len()))
-        }
+        let result = unsafe { Allocator::grow(self, handle.into(), old_layout, new_layout) };
+
+        result.map(|slice| (slice.as_non_null_ptr().into(), slice.len()))
     }
 
     unsafe fn shrink(
@@ -74,13 +94,13 @@ where
         //  -   `old_layout` fits, as per the pre-conditions of `shrink`.
         //  -   `new_layout.size()` is smaller than or equal to `old_layout.size()`, as per the pre-conditions of
         //      `shrink`.
-        unsafe {
-            Allocator::shrink(self, handle, old_layout, new_layout).map(|slice| (slice.as_non_null_ptr(), slice.len()))
-        }
+        let result = unsafe { Allocator::shrink(self, handle.into(), old_layout, new_layout) };
+
+        result.map(|slice| (slice.as_non_null_ptr().into(), slice.len()))
     }
 
     fn allocate_zeroed(&self, layout: Layout) -> Result<(Self::Handle, usize), AllocError> {
-        Allocator::allocate_zeroed(self, layout).map(|slice| (slice.as_non_null_ptr(), slice.len()))
+        Allocator::allocate_zeroed(self, layout).map(|slice| (slice.as_non_null_ptr().into(), slice.len()))
     }
 
     unsafe fn grow_zeroed(
@@ -94,10 +114,9 @@ where
         //  -   `old_layout` fits, as per the pre-conditions of `grow_zeroed`.
         //  -   `new_layout.size()` is greater than or equal to `old_layout.size()`, as per the pre-conditions of
         //      `grow_zeroed`.
-        unsafe {
-            Allocator::grow_zeroed(self, handle, old_layout, new_layout)
-                .map(|slice| (slice.as_non_null_ptr(), slice.len()))
-        }
+        let result = unsafe { Allocator::grow_zeroed(self, handle.into(), old_layout, new_layout) };
+
+        result.map(|slice| (slice.as_non_null_ptr().into(), slice.len()))
     }
 }
 
