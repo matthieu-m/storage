@@ -7,6 +7,7 @@ mod concurrent_vec;
 mod linked_list;
 mod skip_list;
 mod store_box;
+mod store_vec;
 
 #[cfg(test)]
 mod utils;
@@ -15,3 +16,4 @@ pub use concurrent_vec::ConcurrentVec;
 pub use linked_list::LinkedList;
 pub use skip_list::SkipList;
 pub use store_box::StoreBox;
+pub use store_vec::StoreVec;
