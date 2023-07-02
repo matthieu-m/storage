@@ -3,6 +3,7 @@
 use core::{
     alloc::{AllocError, Layout},
     marker::Unsize,
+    mem,
     ptr::{self, Alignment, NonNull},
 };
 
@@ -61,7 +62,22 @@ impl<T, H: Copy> TypedHandle<T, H> {
     ///
     /// Unless `store` implements `StoreMultiple`, this invalidates all existing handles of `store`.
     #[inline(always)]
-    pub fn new<S>(value: T, store: &S) -> Result<Self, AllocError>
+    pub fn new<S>(value: T, store: &S) -> Self
+    where
+        S: Store<Handle = H>,
+    {
+        let Ok(this) = Self::try_new(value, store) else {
+            alloc::handle_alloc_error(Layout::new::<T>())
+        };
+
+        this
+    }
+
+    /// Attempts to create a new handle, pointing to a `T`.
+    ///
+    /// Unless `store` implements `StoreMultiple`, this invalidates all existing handles of `store`.
+    #[inline(always)]
+    pub fn try_new<S>(value: T, store: &S) -> Result<Self, AllocError>
     where
         S: Store<Handle = H>,
     {
@@ -89,7 +105,24 @@ impl<T, H: Copy> TypedHandle<T, H> {
     ///
     /// Unless `store` implements `StoreMultiple`, this invalidates all existing handles of `store`.
     #[inline(always)]
-    pub const fn allocate<S>(store: &S) -> Result<Self, AllocError>
+    pub const fn allocate<S>(store: &S) -> Self
+    where
+        S: ~const Store<Handle = H>,
+    {
+        let Ok(this) = Self::try_allocate(store) else {
+            alloc::handle_alloc_error(Layout::new::<T>())
+        };
+
+        this
+    }
+
+    /// Attempts to allocate a new handle, with enough space for `T`.
+    ///
+    /// The allocated memory is left uninitialized.
+    ///
+    /// Unless `store` implements `StoreMultiple`, this invalidates all existing handles of `store`.
+    #[inline(always)]
+    pub const fn try_allocate<S>(store: &S) -> Result<Self, AllocError>
     where
         S: ~const Store<Handle = H>,
     {
@@ -108,7 +141,24 @@ impl<T, H: Copy> TypedHandle<T, H> {
     ///
     /// Unless `store` implements `StoreMultiple`, this invalidates all existing handles of `store`.
     #[inline(always)]
-    pub const fn allocate_zeroed<S>(store: &S) -> Result<Self, AllocError>
+    pub const fn allocate_zeroed<S>(store: &S) -> Self
+    where
+        S: ~const Store<Handle = H>,
+    {
+        let Ok(this) = Self::try_allocate_zeroed(store) else {
+            alloc::handle_alloc_error(Layout::new::<T>())
+        };
+
+        this
+    }
+
+    /// Attempts to allocate a new handle, with enough space for `T`.
+    ///
+    /// The allocated memory is zeroed out.
+    ///
+    /// Unless `store` implements `StoreMultiple`, this invalidates all existing handles of `store`.
+    #[inline(always)]
+    pub const fn try_allocate_zeroed<S>(store: &S) -> Result<Self, AllocError>
     where
         S: ~const Store<Handle = H>,
     {
@@ -270,6 +320,142 @@ impl<T: ?Sized, H: Copy> TypedHandle<T, H> {
 }
 
 impl<T, H: Copy> TypedHandle<[T], H> {
+    /// Creates a dangling handle.
+    ///
+    /// Calls `handle_alloc_error` if the creation of the handle fails.
+    #[inline(always)]
+    pub const fn dangling_slice<S>(store: &S) -> Self
+    where
+        S: ~const StoreDangling<Handle = H>,
+    {
+        let Ok(this) = Self::try_dangling_slice(store) else {
+            alloc::handle_alloc_error(Layout::new::<T>())
+        };
+
+        this
+    }
+
+    /// Attempts to create a dangling handle.
+    ///
+    /// Returns `AllocError` on failure.
+    #[inline(always)]
+    pub const fn try_dangling_slice<S>(store: &S) -> Result<Self, AllocError>
+    where
+        S: ~const StoreDangling<Handle = H>,
+    {
+        let Ok(handle) = store.dangling(Alignment::of::<T>()) else {
+            return Err(AllocError)
+        };
+
+        let metadata = TypedMetadata::from_metadata(0);
+
+        Ok(Self { handle, metadata })
+    }
+
+    /// Allocates a new handle, with enough space for `size` elements `T`.
+    ///
+    /// The allocated memory is left uninitialized.
+    ///
+    /// Unless `store` implements `StoreMultiple`, this invalidates all existing handles of `store`.
+    #[inline(always)]
+    pub const fn allocate_slice<S>(size: usize, store: &S) -> Self
+    where
+        S: ~const Store<Handle = H> + ~const StoreDangling<Handle = H>,
+    {
+        let Ok(this) = Self::try_allocate_slice(size, store) else {
+            alloc::handle_alloc_error(Layout::new::<T>())
+        };
+
+        this
+    }
+
+    /// Attempts to allocate a new handle, with enough space for `size` elements `T`.
+    ///
+    /// The allocated memory is left uninitialized.
+    ///
+    /// Unless `store` implements `StoreMultiple`, this invalidates all existing handles of `store`.
+    #[inline(always)]
+    pub const fn try_allocate_slice<S>(size: usize, store: &S) -> Result<Self, AllocError>
+    where
+        S: ~const Store<Handle = H> + ~const StoreDangling<Handle = H>,
+    {
+        if mem::size_of::<T>() == 0 {
+            let Ok(mut this) = Self::try_dangling_slice(store) else {
+                alloc::handle_alloc_error(Layout::new::<T>())
+            };
+
+            this.metadata = TypedMetadata::from_metadata(usize::MAX);
+
+            return Ok(this);
+        }
+
+        let Ok(layout) = Self::layout(size) else {
+            return Err(AllocError)
+        };
+
+        let Ok((handle, bytes)) = store.allocate(layout) else {
+            return Err(AllocError)
+        };
+
+        debug_assert!(bytes >= layout.size());
+
+        let metadata = TypedMetadata::from_metadata(bytes / mem::size_of::<T>());
+
+        Ok(Self { handle, metadata })
+    }
+
+    /// Allocates a new handle, with enough space for `size` elements `T`.
+    ///
+    /// The allocated memory is zeroed out.
+    ///
+    /// Unless `store` implements `StoreMultiple`, this invalidates all existing handles of `store`.
+    #[inline(always)]
+    pub const fn allocate_zeroed_slice<S>(size: usize, store: &S) -> Self
+    where
+        S: ~const Store<Handle = H> + ~const StoreDangling<Handle = H>,
+    {
+        let Ok(this) = Self::try_allocate_zeroed_slice(size, store) else {
+            alloc::handle_alloc_error(Layout::new::<T>())
+        };
+
+        this
+    }
+
+    /// Attempts to allocate a new handle, with enough space for `size` elements `T`.
+    ///
+    /// The allocated memory is zeroed out.
+    ///
+    /// Unless `store` implements `StoreMultiple`, this invalidates all existing handles of `store`.
+    #[inline(always)]
+    pub const fn try_allocate_zeroed_slice<S>(size: usize, store: &S) -> Result<Self, AllocError>
+    where
+        S: ~const Store<Handle = H> + ~const StoreDangling<Handle = H>,
+    {
+        if mem::size_of::<T>() == 0 {
+            let Ok(mut this) = Self::try_dangling_slice(store) else {
+                alloc::handle_alloc_error(Layout::new::<T>())
+            };
+
+            this.metadata = TypedMetadata::from_metadata(usize::MAX);
+
+            return Ok(this);
+        }
+
+        let Ok(layout) = Self::layout(size) else {
+            return Err(AllocError)
+        };
+
+        let Ok((handle, bytes)) = store.allocate_zeroed(layout) else {
+            return Err(AllocError)
+        };
+
+        debug_assert!(bytes >= layout.size());
+
+        let metadata = TypedMetadata::from_metadata(bytes / mem::size_of::<T>());
+
+        Ok(Self { handle, metadata })
+    }
+
     /// Returns whether the memory area associated to `self` may not contain any element.
     pub const fn is_empty(&self) -> bool {
         self.metadata.get() == 0
@@ -290,25 +476,60 @@ impl<T, H: Copy> TypedHandle<[T], H> {
     /// -   `self` must have been allocated by `store`.
     /// -   `self` must still be valid.
     /// -   `new_size` must be greater than or equal to `self.len()`.
-    pub unsafe fn grow<S>(&mut self, new_size: usize, store: &S) -> Result<(), AllocError>
+    pub const unsafe fn grow<S>(&mut self, new_size: usize, store: &S)
     where
-        S: Store<Handle = H>,
+        S: ~const Store<Handle = H>,
+    {
+        //  Safety:
+        //  -   `self` has been allocated by `store`, as per pre-conditions.
+        //  -   `self` is still valid, as per pre-conditions.
+        //  -   `new_size` must be greater than or equal to `self.len()`, as per pre-conditions.
+        let result = unsafe { self.try_grow(new_size, store) };
+
+        if result.is_err() {
+            alloc::handle_alloc_error(Layout::new::<T>())
+        }
+    }
+
+    /// Attempts to grow the block of memory associated with the handle.
+    ///
+    /// On success, all the copies of the handle are invalidated, and the extra memory is left uninitialized. On
+    /// failure, an error is returned.
+    ///
+    /// #   Safety
+    ///
+    /// -   `self` must have been allocated by `store`.
+    /// -   `self` must still be valid.
+    /// -   `new_size` must be greater than or equal to `self.len()`.
+    pub const unsafe fn try_grow<S>(&mut self, new_size: usize, store: &S) -> Result<(), AllocError>
+    where
+        S: ~const Store<Handle = H>,
     {
         debug_assert!(new_size >= self.len());
 
-        let (old_layout, _) = Layout::new::<T>().repeat(self.len()).map_err(|_| AllocError)?;
-        let (new_layout, _) = Layout::new::<T>().repeat(new_size).map_err(|_| AllocError)?;
+        let Ok(old_layout) = Self::layout(self.len()) else {
+            return Err(AllocError)
+        };
+
+        let Ok(new_layout) = Self::layout(new_size) else {
+            return Err(AllocError)
+        };
 
         //  Safety:
         //  -   `self.handle` was allocated by `store`, as per pre-conditions.
         //  -   `self.handle` is still valid, as per pre-conditions.
         //  -   `old_layout` fits the block of memory associated to `self.handle`, by construction.
         //  -   `new_layout`'s size is greater than or equal to the size of `old_layout`, as per pre-conditions.
-        let (handle, _) = unsafe { store.grow(self.handle, old_layout, new_layout)? };
+        let result = unsafe { store.grow(self.handle, old_layout, new_layout) };
+
+        let Ok((handle, bytes)) = result else {
+            return Err(AllocError)
+        };
+
+        debug_assert!(bytes >= new_layout.size());
 
         self.handle = handle;
-
-        self.metadata = TypedMetadata::from_metadata(new_size);
+        self.metadata = TypedMetadata::from_metadata(bytes / mem::size_of::<T>());
 
         Ok(())
     }
@@ -323,25 +544,60 @@ impl<T, H: Copy> TypedHandle<[T], H> {
     /// -   `self` must have been allocated by `store`.
     /// -   `self` must still be valid.
     /// -   `new_size` must be greater than or equal to `self.len()`.
-    pub unsafe fn grow_zeroed<S>(&mut self, new_size: usize, store: &S) -> Result<(), AllocError>
+    pub const unsafe fn grow_zeroed<S>(&mut self, new_size: usize, store: &S)
     where
-        S: Store<Handle = H>,
+        S: ~const Store<Handle = H>,
+    {
+        //  Safety:
+        //  -   `self` has been allocated by `store`, as per pre-conditions.
+        //  -   `self` is still valid, as per pre-conditions.
+        //  -   `new_size` must be greater than or equal to `self.len()`, as per pre-conditions.
+        let result = unsafe { self.try_grow_zeroed(new_size, store) };
+
+        if result.is_err() {
+            alloc::handle_alloc_error(Layout::new::<T>())
+        }
+    }
+
+    /// Attempts to grow the block of memory associated with the handle.
+    ///
+    /// On success, all the copies of the handle are invalidated, and the extra memory is zeroed. On failure, an error
+    /// is returned.
+    ///
+    /// #   Safety
+    ///
+    /// -   `self` must have been allocated by `store`.
+    /// -   `self` must still be valid.
+    /// -   `new_size` must be greater than or equal to `self.len()`.
+    pub const unsafe fn try_grow_zeroed<S>(&mut self, new_size: usize, store: &S) -> Result<(), AllocError>
+    where
+        S: ~const Store<Handle = H>,
     {
         debug_assert!(new_size >= self.len());
 
-        let (old_layout, _) = Layout::new::<T>().repeat(self.len()).map_err(|_| AllocError)?;
-        let (new_layout, _) = Layout::new::<T>().repeat(new_size).map_err(|_| AllocError)?;
+        let Ok(old_layout) = Self::layout(self.len()) else {
+            return Err(AllocError)
+        };
+
+        let Ok(new_layout) = Self::layout(new_size) else {
+            return Err(AllocError)
+        };
 
         //  Safety:
         //  -   `self.handle` was allocated by `store`, as per pre-conditions.
         //  -   `self.handle` is still valid, as per pre-conditions.
         //  -   `old_layout` fits the block of memory associated to `self.handle`, by construction.
         //  -   `new_layout`'s size is greater than or equal to the size of `old_layout`, as per pre-conditions.
-        let (handle, _) = unsafe { store.grow_zeroed(self.handle, old_layout, new_layout)? };
+        let result = unsafe { store.grow_zeroed(self.handle, old_layout, new_layout) };
+
+        let Ok((handle, bytes)) = result else {
+            return Err(AllocError)
+        };
+
+        debug_assert!(bytes >= new_layout.size());
 
         self.handle = handle;
-
-        self.metadata = TypedMetadata::from_metadata(new_size);
+        self.metadata = TypedMetadata::from_metadata(bytes / mem::size_of::<T>());
 
         Ok(())
     }
@@ -355,25 +611,63 @@ impl<T, H: Copy> TypedHandle<[T], H> {
     /// -   `self` must have been allocated by `store`.
     /// -   `self` must still be valid.
     /// -   `new_size` must be less than or equal to `self.len()`.
-    pub unsafe fn shrink<S>(&mut self, new_size: usize, store: &S) -> Result<(), AllocError>
+    pub const unsafe fn shrink<S>(&mut self, new_size: usize, store: &S)
     where
-        S: Store<Handle = H>,
+        S: ~const Store<Handle = H>,
+    {
+        //  Safety:
+        //  -   `self` has been allocated by `store`, as per pre-conditions.
+        //  -   `self` is still valid, as per pre-conditions.
+        //  -   `new_size` must be less than or equal to `self.len()`, as per pre-conditions.
+        let result = unsafe { self.try_shrink(new_size, store) };
+
+        if result.is_err() {
+            alloc::handle_alloc_error(Layout::new::<T>())
+        }
+    }
+
+    /// Attempts to shrink the block of memory associated with the handle.
+    ///
+    /// On success, all the copies of the handle are invalidated. On failure, an error is returned.
+    ///
+    /// #   Safety
+    ///
+    /// -   `self` must have been allocated by `store`.
+    /// -   `self` must still be valid.
+    /// -   `new_size` must be less than or equal to `self.len()`.
+    pub const unsafe fn try_shrink<S>(&mut self, new_size: usize, store: &S) -> Result<(), AllocError>
+    where
+        S: ~const Store<Handle = H>,
     {
         debug_assert!(new_size <= self.len());
 
-        let (old_layout, _) = Layout::new::<T>().repeat(self.len()).map_err(|_| AllocError)?;
-        let (new_layout, _) = Layout::new::<T>().repeat(new_size).map_err(|_| AllocError)?;
+        if mem::size_of::<T>() == 0 {
+            return Ok(());
+        }
+
+        let Ok(old_layout) = Self::layout(self.len()) else {
+            return Err(AllocError)
+        };
+
+        let Ok(new_layout) = Self::layout(new_size) else {
+            return Err(AllocError)
+        };
 
         //  Safety:
         //  -   `self.handle` was allocated by `store`, as per pre-conditions.
         //  -   `self.handle` is still valid, as per pre-conditions.
         //  -   `old_layout` fits the block of memory associated to `self.handle`, by construction.
         //  -   `new_layout`'s size is less than or equal to the size of `old_layout`, as per pre-conditions.
-        let (handle, _) = unsafe { store.shrink(self.handle, old_layout, new_layout)? };
+        let result = unsafe { store.shrink(self.handle, old_layout, new_layout) };
+
+        let Ok((handle, bytes)) = result else {
+            return Err(AllocError)
+        };
+
+        debug_assert!(bytes >= new_layout.size());
 
         self.handle = handle;
-
-        self.metadata = TypedMetadata::from_metadata(new_size);
+        self.metadata = TypedMetadata::from_metadata(bytes / mem::size_of::<T>());
 
         Ok(())
     }
@@ -389,3 +683,23 @@ impl<T: ?Sized, H: Copy> Copy for TypedHandle<T, H> {}
 
 #[cfg(feature = "coercible-metadata")]
 impl<T, U: ?Sized, H: Copy> CoerceUnsized<TypedHandle<U, H>> for TypedHandle<T, H> where T: Unsize<U> {}
+
+//
+//  Implementation
+//
+
+impl<T, H> TypedHandle<[T], H> {
+    const fn layout(size: usize) -> Result<Layout, AllocError> {
+        let Some(size) = mem::size_of::<T>().checked_mul(size) else {
+            return Err(AllocError)
+        };
+
+        let align = mem::align_of::<T>();
+
+        let Ok(layout) = Layout::from_size_align(size, align) else {
+            return Err(AllocError)
+        };
+
+        Ok(layout)
+    }
+}

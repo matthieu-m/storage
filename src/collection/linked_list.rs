@@ -232,7 +232,7 @@ impl<T, S: StoreMultiple> LinkedList<T, S> {
             next: self.head,
             prev: NodeHandle::dangling(&self.store),
         };
-        let handle = TypedHandle::new(node, &self.store)?;
+        let handle = TypedHandle::try_new(node, &self.store)?;
 
         self.head = handle;
 
@@ -252,7 +252,7 @@ impl<T, S: StoreMultiple> LinkedList<T, S> {
             next: NodeHandle::dangling(&self.store),
             prev: self.tail,
         };
-        let handle = TypedHandle::new(node, &self.store)?;
+        let handle = TypedHandle::try_new(node, &self.store)?;
 
         if !self.is_empty() {
             //  Safety:

@@ -17,9 +17,16 @@ use crate::interface::{Store, StoreDangling, StoreStable};
 /// The block of memory is aligned and sized as per `T`.
 pub struct InlineSingleStore<T>(UnsafeCell<MaybeUninit<T>>);
 
+impl<T> InlineSingleStore<T> {
+    /// Creates a new instance.
+    pub const fn new() -> Self {
+        Self(UnsafeCell::new(MaybeUninit::uninit()))
+    }
+}
+
 impl<T> Default for InlineSingleStore<T> {
     fn default() -> Self {
-        Self(UnsafeCell::new(MaybeUninit::uninit()))
+        Self::new()
     }
 }
 
@@ -149,6 +156,14 @@ impl<T> fmt::Debug for InlineSingleStore<T> {
             .finish()
     }
 }
+
+//  Safety:
+//  -   Self-contained, so can be sent across threads safely.
+unsafe impl<T> Send for InlineSingleStore<T> {}
+
+//  Safety:
+//  -   Immutable (by itself), so can be shared across threads safely.
+unsafe impl<T> Sync for InlineSingleStore<T> {}
 
 //
 //  Implementation

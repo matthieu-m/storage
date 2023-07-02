@@ -44,11 +44,22 @@ impl<T, H: Copy> UniqueHandle<T, H> {
     ///
     /// Unless `store` implements `StoreMultiple`, this invalidates all existing handles of `store`.
     #[inline(always)]
-    pub fn new<S>(value: T, store: &S) -> Result<Self, AllocError>
+    pub fn new<S>(value: T, store: &S) -> Self
     where
         S: Store<Handle = H>,
     {
-        TypedHandle::new(value, store).map(Self)
+        Self(TypedHandle::new(value, store))
+    }
+
+    /// Attempts to create a new handle, pointing to a `T`.
+    ///
+    /// Unless `store` implements `StoreMultiple`, this invalidates all existing handles of `store`.
+    #[inline(always)]
+    pub fn try_new<S>(value: T, store: &S) -> Result<Self, AllocError>
+    where
+        S: Store<Handle = H>,
+    {
+        TypedHandle::try_new(value, store).map(Self)
     }
 
     /// Allocates a new handle, with enough space for `T`.
@@ -57,11 +68,24 @@ impl<T, H: Copy> UniqueHandle<T, H> {
     ///
     /// Unless `store` implements `StoreMultiple`, this invalidates all existing handles of `store`.
     #[inline(always)]
-    pub const fn allocate<S>(store: &S) -> Result<Self, AllocError>
+    pub const fn allocate<S>(store: &S) -> Self
     where
         S: ~const Store<Handle = H>,
     {
-        let Ok(handle) = TypedHandle::allocate(store) else {
+        Self(TypedHandle::allocate(store))
+    }
+
+    /// Attempts to allocate a new handle, with enough space for `T`.
+    ///
+    /// The allocated memory is left uninitialized.
+    ///
+    /// Unless `store` implements `StoreMultiple`, this invalidates all existing handles of `store`.
+    #[inline(always)]
+    pub const fn try_allocate<S>(store: &S) -> Result<Self, AllocError>
+    where
+        S: ~const Store<Handle = H>,
+    {
+        let Ok(handle) = TypedHandle::try_allocate(store) else {
             return Err(AllocError)
         };
 
@@ -74,11 +98,24 @@ impl<T, H: Copy> UniqueHandle<T, H> {
     ///
     /// Unless `store` implements `StoreMultiple`, this invalidates all existing handles of `store`.
     #[inline(always)]
-    pub const fn allocate_zeroed<S>(store: &S) -> Result<Self, AllocError>
+    pub const fn allocate_zeroed<S>(store: &S) -> Self
     where
         S: ~const Store<Handle = H>,
     {
-        let Ok(handle) = TypedHandle::allocate_zeroed(store) else {
+        Self(TypedHandle::allocate_zeroed(store))
+    }
+
+    /// Attempts to allocate a new handle, with enough space for `T`.
+    ///
+    /// The allocated memory is zeroed out.
+    ///
+    /// Unless `store` implements `StoreMultiple`, this invalidates all existing handles of `store`.
+    #[inline(always)]
+    pub const fn try_allocate_zeroed<S>(store: &S) -> Result<Self, AllocError>
+    where
+        S: ~const Store<Handle = H>,
+    {
+        let Ok(handle) = TypedHandle::try_allocate_zeroed(store) else {
             return Err(AllocError)
         };
 
@@ -215,6 +252,92 @@ impl<T: ?Sized, H: Copy> UniqueHandle<T, H> {
 }
 
 impl<T, H: Copy> UniqueHandle<[T], H> {
+    /// Creates a dangling handle.
+    ///
+    /// Calls `handle_alloc_error` on allocation failure.
+    #[inline(always)]
+    pub const fn dangling_slice<S>(store: &S) -> Self
+    where
+        S: ~const StoreDangling<Handle = H>,
+    {
+        Self(TypedHandle::dangling_slice(store))
+    }
+
+    /// Attempts to create a dangling handle.
+    ///
+    /// Returns an error on allocation failure.
+    #[inline(always)]
+    pub const fn try_dangling_slice<S>(store: &S) -> Result<Self, AllocError>
+    where
+        S: ~const StoreDangling<Handle = H>,
+    {
+        let Ok(handle) = TypedHandle::try_dangling_slice(store) else {
+            return Err(AllocError)
+        };
+
+        Ok(Self(handle))
+    }
+
+    /// Allocates a new handle, with enough space for `size` elements `T`.
+    ///
+    /// The allocated memory is left uninitialized.
+    ///
+    /// Unless `store` implements `StoreMultiple`, this invalidates all existing handles of `store`.
+    #[inline(always)]
+    pub const fn allocate_slice<S>(size: usize, store: &S) -> Self
+    where
+        S: ~const Store<Handle = H> + ~const StoreDangling<Handle = H>,
+    {
+        Self(TypedHandle::allocate_slice(size, store))
+    }
+
+    /// Attempts to allocate a new handle, with enough space for `size` elements `T`.
+    ///
+    /// The allocated memory is left uninitialized.
+    ///
+    /// Unless `store` implements `StoreMultiple`, this invalidates all existing handles of `store`.
+    #[inline(always)]
+    pub const fn try_allocate_slice<S>(size: usize, store: &S) -> Result<Self, AllocError>
+    where
+        S: ~const Store<Handle = H> + ~const StoreDangling<Handle = H>,
+    {
+        let Ok(handle) = TypedHandle::try_allocate_slice(size, store) else {
+            return Err(AllocError)
+        };
+
+        Ok(Self(handle))
+    }
+
+    /// Allocates a new handle, with enough space for `size` elements `T`.
+    ///
+    /// The allocated memory is zeroed out.
+    ///
+    /// Unless `store` implements `StoreMultiple`, this invalidates all existing handles of `store`.
+    #[inline(always)]
+    pub const fn allocate_zeroed_slice<S>(size: usize, store: &S) -> Self
+    where
+        S: ~const Store<Handle = H> + ~const StoreDangling<Handle = H>,
+    {
+        Self(TypedHandle::allocate_zeroed_slice(size, store))
+    }
+
+    /// Attempts to allocate a new handle, with enough space for `size` elements `T`.
+    ///
+    /// The allocated memory is zeroed out.
+    ///
+    /// Unless `store` implements `StoreMultiple`, this invalidates all existing handles of `store`.
+    #[inline(always)]
+    pub const fn try_allocate_zeroed_slice<S>(size: usize, store: &S) -> Result<Self, AllocError>
+    where
+        S: ~const Store<Handle = H> + ~const StoreDangling<Handle = H>,
+    {
+        let Ok(handle) = TypedHandle::try_allocate_zeroed_slice(size, store) else {
+            return Err(AllocError)
+        };
+
+        Ok(Self(handle))
+    }
+
     /// Returns whether the memory area associated to `self` may not contain any element.
     pub const fn is_empty(&self) -> bool {
         self.0.is_empty()
@@ -234,15 +357,35 @@ impl<T, H: Copy> UniqueHandle<[T], H> {
     /// -   `self` must have been allocated by `store`.
     /// -   `self` must still be valid.
     /// -   `new_size` must be greater than or equal to `self.len()`.
-    pub unsafe fn grow<S>(&mut self, new_size: usize, store: &S) -> Result<(), AllocError>
+    pub const unsafe fn grow<S>(&mut self, new_size: usize, store: &S)
     where
-        S: Store<Handle = H>,
+        S: ~const Store<Handle = H>,
     {
         //  Safety:
         //  -   `self.0` has been allocated by `store`, as per pre-conditions.
         //  -   `self.0` is still valid, as per pre-conditions.
         //  -   `new_size` is greater than or equal to `self.0.len()`.
         unsafe { self.0.grow(new_size, store) }
+    }
+
+    /// Attempts to grow the block of memory associated with the handle.
+    ///
+    /// On success, the extra memory is left uninitialized. On failure, an error is returned.
+    ///
+    /// #   Safety
+    ///
+    /// -   `self` must have been allocated by `store`.
+    /// -   `self` must still be valid.
+    /// -   `new_size` must be greater than or equal to `self.len()`.
+    pub const unsafe fn try_grow<S>(&mut self, new_size: usize, store: &S) -> Result<(), AllocError>
+    where
+        S: ~const Store<Handle = H>,
+    {
+        //  Safety:
+        //  -   `self.0` has been allocated by `store`, as per pre-conditions.
+        //  -   `self.0` is still valid, as per pre-conditions.
+        //  -   `new_size` is greater than or equal to `self.0.len()`.
+        unsafe { self.0.try_grow(new_size, store) }
     }
 
     /// Grows the block of memory associated with the handle.
@@ -254,15 +397,35 @@ impl<T, H: Copy> UniqueHandle<[T], H> {
     /// -   `self` must have been allocated by `store`.
     /// -   `self` must still be valid.
     /// -   `new_size` must be greater than or equal to `self.len()`.
-    pub unsafe fn grow_zeroed<S>(&mut self, new_size: usize, store: &S) -> Result<(), AllocError>
+    pub const unsafe fn grow_zeroed<S>(&mut self, new_size: usize, store: &S)
     where
-        S: Store<Handle = H>,
+        S: ~const Store<Handle = H>,
     {
         //  Safety:
         //  -   `self.0` has been allocated by `store`, as per pre-conditions.
         //  -   `self.0` is still valid, as per pre-conditions.
         //  -   `new_size` is greater than or equal to `self.0.len()`.
         unsafe { self.0.grow_zeroed(new_size, store) }
+    }
+
+    /// Attempts to grow the block of memory associated with the handle.
+    ///
+    /// On success, the extra memory is zeroed. On failure, an error is returned.
+    ///
+    /// #   Safety
+    ///
+    /// -   `self` must have been allocated by `store`.
+    /// -   `self` must still be valid.
+    /// -   `new_size` must be greater than or equal to `self.len()`.
+    pub const unsafe fn try_grow_zeroed<S>(&mut self, new_size: usize, store: &S) -> Result<(), AllocError>
+    where
+        S: ~const Store<Handle = H>,
+    {
+        //  Safety:
+        //  -   `self.0` has been allocated by `store`, as per pre-conditions.
+        //  -   `self.0` is still valid, as per pre-conditions.
+        //  -   `new_size` is greater than or equal to `self.0.len()`.
+        unsafe { self.0.try_grow_zeroed(new_size, store) }
     }
 
     /// Shrinks the block of memory associated with the handle.
@@ -274,15 +437,35 @@ impl<T, H: Copy> UniqueHandle<[T], H> {
     /// -   `self` must have been allocated by `store`.
     /// -   `self` must still be valid.
     /// -   `new_size` must be less than or equal to `self.len()`.
-    pub unsafe fn shrink<S>(&mut self, new_size: usize, store: &S) -> Result<(), AllocError>
+    pub const unsafe fn shrink<S>(&mut self, new_size: usize, store: &S)
     where
-        S: Store<Handle = H>,
+        S: ~const Store<Handle = H>,
     {
         //  Safety:
         //  -   `self.0` has been allocated by `store`, as per pre-conditions.
         //  -   `self.0` is still valid, as per pre-conditions.
         //  -   `new_size` is less than or equal to `self.0.len()`.
         unsafe { self.0.shrink(new_size, store) }
+    }
+
+    /// Shrinks the block of memory associated with the handle.
+    ///
+    /// On failure, an error is returned.
+    ///
+    /// #   Safety
+    ///
+    /// -   `self` must have been allocated by `store`.
+    /// -   `self` must still be valid.
+    /// -   `new_size` must be less than or equal to `self.len()`.
+    pub const unsafe fn try_shrink<S>(&mut self, new_size: usize, store: &S) -> Result<(), AllocError>
+    where
+        S: ~const Store<Handle = H>,
+    {
+        //  Safety:
+        //  -   `self.0` has been allocated by `store`, as per pre-conditions.
+        //  -   `self.0` is still valid, as per pre-conditions.
+        //  -   `new_size` is less than or equal to `self.0.len()`.
+        unsafe { self.0.try_shrink(new_size, store) }
     }
 }
 

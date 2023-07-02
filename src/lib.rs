@@ -16,6 +16,7 @@
 #![feature(const_mut_refs)]
 #![feature(const_ptr_as_ref)]
 #![feature(const_refs_to_cell)]
+#![feature(const_slice_from_raw_parts_mut)]
 #![feature(const_trait_impl)]
 #![feature(const_try)]
 #![feature(const_ptr_write)]

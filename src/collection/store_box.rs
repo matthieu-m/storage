@@ -21,27 +21,23 @@ pub struct StoreBox<T: ?Sized, S: Store> {
 
 impl<T, S: Store + Default> StoreBox<T, S> {
     /// Creates a new instance.
-    pub fn new(value: T) -> Result<Self, (T, S)> {
+    pub fn new(value: T) -> Self {
         Self::new_in(value, S::default())
     }
 }
 
 impl<T, S: Store> StoreBox<T, S> {
     /// Creates a new instance.
-    pub fn new_in(value: T, store: S) -> Result<Self, (T, S)> {
-        let Ok(handle) = UniqueHandle::allocate(&store) else {
-            return Err((value, store))
-        };
+    pub fn new_in(value: T, store: S) -> Self {
+        let handle = UniqueHandle::new(value, &store);
+        let store = ManuallyDrop::new(store);
 
-        //  Safety:
-        //  -   `handle` was allocated by `self`.
-        //  -   `handle` is still valid.
-        let pointer = unsafe { handle.resolve_raw(&store) };
+        Self { store, handle }
+    }
 
-        //  Safety:
-        //  -   `pointer` is valid for writes of `Layout::new::<T>().size()` bytes.
-        unsafe { ptr::write(pointer.cast().as_ptr(), value) };
-
+    /// Attempts to create a new instance.
+    pub fn try_new_in(value: T, store: S) -> Result<Self, AllocError> {
+        let handle = UniqueHandle::try_new(value, &store)?;
         let store = ManuallyDrop::new(store);
 
         Ok(Self { store, handle })
@@ -53,8 +49,6 @@ impl<T: Clone, S: Store + Default> Clone for StoreBox<T, S> {
         let value: &T = self;
 
         Self::new(value.clone())
-            .map_err(|_| AllocError)
-            .expect("Clone would have sufficient store space")
     }
 
     fn clone_from(&mut self, source: &StoreBox<T, S>) {
@@ -161,7 +155,7 @@ mod test_inline {
     #[test]
     fn sized_store() {
         let store = InlineSingleStore::<u8>::default();
-        let mut boxed = StoreBox::new_in(1u8, store).unwrap();
+        let mut boxed = StoreBox::new_in(1u8, store);
 
         assert_eq!(1u8, *boxed);
 
@@ -180,7 +174,7 @@ mod test_inline {
     #[test]
     fn slice_store() {
         let store = InlineSingleStore::<[u8; 4]>::default();
-        let boxed = StoreBox::new_in([1u8, 2, 3], store).unwrap();
+        let boxed = StoreBox::new_in([1u8, 2, 3], store);
         let mut boxed: StoreBox<[u8], _> = StoreBox::coerce(boxed);
 
         assert_eq!([1u8, 2, 3], &*boxed);
@@ -194,7 +188,7 @@ mod test_inline {
     #[test]
     fn slice_coercion() {
         let store = InlineSingleStore::<[u8; 4]>::default();
-        let boxed = StoreBox::new_in([1u8, 2, 3], store).unwrap();
+        let boxed = StoreBox::new_in([1u8, 2, 3], store);
         let mut boxed: StoreBox<[u8], _> = boxed;
 
         assert_eq!([1u8, 2, 3], &*boxed);
@@ -207,7 +201,7 @@ mod test_inline {
     #[test]
     fn trait_store() {
         let store = InlineSingleStore::<[u8; 4]>::default();
-        let boxed = StoreBox::new_in([1u8, 2, 3], store).unwrap();
+        let boxed = StoreBox::new_in([1u8, 2, 3], store);
         let boxed: StoreBox<dyn fmt::Debug, _> = StoreBox::coerce(boxed);
 
         assert_eq!("StoreBox([1, 2, 3])", format!("{:?}", boxed));
@@ -217,7 +211,7 @@ mod test_inline {
     #[test]
     fn trait_coercion() {
         let store = InlineSingleStore::<[u8; 4]>::default();
-        let boxed = StoreBox::new_in([1u8, 2, 3], store).unwrap();
+        let boxed = StoreBox::new_in([1u8, 2, 3], store);
         let boxed: StoreBox<dyn fmt::Debug, _> = boxed;
 
         assert_eq!("StoreBox([1, 2, 3])", format!("{:?}", boxed));
@@ -234,12 +228,12 @@ mod test_allocator {
 
     #[test]
     fn sized_failure() {
-        StoreBox::new_in(1, NonAllocator).unwrap_err();
+        StoreBox::try_new_in(1, NonAllocator).unwrap_err();
     }
 
     #[test]
     fn sized_allocated() {
-        let mut boxed = StoreBox::new_in(1, System).unwrap();
+        let mut boxed = StoreBox::new_in(1, System);
 
         assert_eq!(1u32, *boxed);
 
@@ -257,12 +251,12 @@ mod test_allocator {
 
     #[test]
     fn slice_failure() {
-        StoreBox::new_in([1u8, 2, 3], NonAllocator).unwrap_err();
+        StoreBox::try_new_in([1u8, 2, 3], NonAllocator).unwrap_err();
     }
 
     #[test]
     fn slice_allocated() {
-        let boxed = StoreBox::new_in([1u8, 2, 3], System).unwrap();
+        let boxed = StoreBox::new_in([1u8, 2, 3], System);
         let mut boxed: StoreBox<[u8], _> = StoreBox::coerce(boxed);
 
         assert_eq!([1u8, 2, 3], &*boxed);
@@ -275,7 +269,7 @@ mod test_allocator {
     #[cfg(feature = "coercible-metadata")]
     #[test]
     fn slice_coercion() {
-        let boxed = StoreBox::new_in([1u8, 2, 3], System).unwrap();
+        let boxed = StoreBox::new_in([1u8, 2, 3], System);
         let mut boxed: StoreBox<[u8], _> = boxed;
 
         assert_eq!([1u8, 2, 3], &*boxed);
@@ -287,12 +281,12 @@ mod test_allocator {
 
     #[test]
     fn trait_failure() {
-        StoreBox::new_in([1u8, 2, 3], NonAllocator).unwrap_err();
+        StoreBox::try_new_in([1u8, 2, 3], NonAllocator).unwrap_err();
     }
 
     #[test]
     fn trait_allocated() {
-        let boxed = StoreBox::new_in([1u8, 2, 3], System).unwrap();
+        let boxed = StoreBox::new_in([1u8, 2, 3], System);
         let boxed: StoreBox<dyn fmt::Debug, _> = StoreBox::coerce(boxed);
 
         assert_eq!("StoreBox([1, 2, 3])", format!("{:?}", boxed));
@@ -301,7 +295,7 @@ mod test_allocator {
     #[cfg(feature = "coercible-metadata")]
     #[test]
     fn trait_coercion() {
-        let boxed = StoreBox::new_in([1u8, 2, 3], System).unwrap();
+        let boxed = StoreBox::new_in([1u8, 2, 3], System);
         let boxed: StoreBox<dyn fmt::Debug, _> = boxed;
 
         assert_eq!("StoreBox([1, 2, 3])", format!("{:?}", boxed));
