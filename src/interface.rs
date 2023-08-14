@@ -24,6 +24,14 @@ use core::{
 /// -   A handle is invalidated when used as an argument to the `Store::grow`, `Store::grow_zeroed`, or
 ///     `Store::shrink` and these methods succeed.
 ///
+/// Handle Conversion:
+///
+/// -   If a handle can be converted into a `NonNull<u8>`, for example via `Into`, or `TryInto`, and the handle is
+///     valid, possibly dangling, then the resulting pointer must be equal to the result of `Store::resolve` and
+///     obtaining this pointer must NOT invalidate any other handle.
+/// -   If a handle can be created from a `NonNull<u8>`, for example via `From`, or `TryFrom`, then the resulting handle
+///     is a copy of the handle which resolved into the `NonNull<u8>` in the first place.
+///
 /// Pointer Invalidation:
 ///
 /// -   All pointers resolved by an instance of `Store` may be invalidated when dropping this instance of `Store`.
