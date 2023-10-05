@@ -560,3 +560,41 @@ mod tests_inline {
         assert_eq!(["0", "1", "2"], v.as_slice());
     }
 } // mod tests_inline
+
+#[cfg(test)]
+mod tests_stack {
+    use crate::store::{StackBumpBlock, StackBumpStore};
+
+    use super::*;
+
+    type StackVec<'a, T> = StoreVec<T, StackBumpStore<'a, usize>>;
+
+    #[test]
+    fn brush() {
+        let block = StackBumpBlock::<[String; 12]>::new();
+
+        let mut v = StackVec::<'_, String>::new_in(block.create_store());
+
+        assert_eq!(0, v.len());
+        assert_eq!(0, v.capacity());
+        assert_eq!(None, v.pop());
+
+        v.push(String::from("0"));
+
+        assert_eq!(1, v.len());
+        assert_eq!(1, v.capacity());
+
+        v.push(String::from("2"));
+
+        assert_eq!(Some("2"), v.pop().as_deref());
+
+        v.push(String::from("2"));
+        v.push(String::from("2"));
+
+        let s = v.get_mut(1).unwrap();
+        s.clear();
+        s.push('1');
+
+        assert_eq!(["0", "1", "2"], v.as_slice());
+    }
+} // mod tests_stack
