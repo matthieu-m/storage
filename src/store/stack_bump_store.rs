@@ -12,7 +12,7 @@ use core::{
     ptr::{self, Alignment, NonNull},
 };
 
-use crate::interface::{Store, StoreDangling, StoreMultiple, StorePinning, StoreSharing, StoreStable};
+use crate::interface::{Store, StoreDangling, StorePinning, StoreSharing, StoreSingle, StoreStable};
 
 /// The backing block of memory for the store.
 ///
@@ -159,9 +159,54 @@ where
     }
 }
 
-//  Safety:
-//  -   Handles remain valid across all operations on `self`.
-unsafe impl<'a, H> StoreMultiple for StackBumpStore<'a, H> where H: Copy + TryFrom<usize> + TryInto<usize> {}
+unsafe impl<'a, H> StoreSingle for StackBumpStore<'a, H>
+where
+    H: Copy + TryFrom<usize> + TryInto<usize>,
+{
+    #[inline(always)]
+    unsafe fn resolve(&self, handle: Self::Handle) -> NonNull<u8> {
+        //  Safety:
+        //  -   As per pre-conditions.
+        unsafe { <Self as Store>::resolve(self, handle) }
+    }
+
+    #[inline(always)]
+    unsafe fn resolve_mut(&mut self, handle: Self::Handle) -> NonNull<u8> {
+        //  Safety:
+        //  -   As per pre-conditions.
+        unsafe { <Self as Store>::resolve(self, handle) }
+    }
+
+    fn allocate(&mut self, layout: Layout) -> Result<(Self::Handle, usize), AllocError> {
+        <Self as Store>::allocate(self, layout)
+    }
+
+    #[inline(always)]
+    unsafe fn deallocate(&mut self, _handle: Self::Handle, _layout: Layout) {}
+
+    unsafe fn grow(
+        &mut self,
+        handle: Self::Handle,
+        old_layout: Layout,
+        new_layout: Layout,
+    ) -> Result<(Self::Handle, usize), AllocError> {
+        //  Safety:
+        //  -   As per pre-conditions.
+        unsafe { <Self as Store>::grow(self, handle, old_layout, new_layout) }
+    }
+
+    #[inline(always)]
+    unsafe fn shrink(
+        &mut self,
+        handle: Self::Handle,
+        old_layout: Layout,
+        new_layout: Layout,
+    ) -> Result<(Self::Handle, usize), AllocError> {
+        //  Safety:
+        //  -   As per pre-conditions.
+        unsafe { <Self as Store>::shrink(self, handle, old_layout, new_layout) }
+    }
+}
 
 //  Safety:
 //  -   `self.resolve(handle)` always returns the same address.
@@ -279,7 +324,7 @@ where
         //  Safety:
         //  -   `handle` is valid, as per pre-conditions.
         //  -   `result` is valid, since newly allocated.
-        let (new, old) = unsafe { (self.resolve(result), self.resolve(handle)) };
+        let (new, old) = unsafe { (Store::resolve(self, result), Store::resolve(self, handle)) };
 
         //  Safety:
         //  -   `old` is valid for `old_layout.size()` bytes, as per pre-conditions.

@@ -9,12 +9,12 @@ use core::{
 };
 
 use crate::{
-    extension::unique::UniqueHandle,
-    interface::{Store, StoreDangling},
+    extension::unique_single::UniqueSingleHandle,
+    interface::{StoreDangling, StoreSingle},
 };
 
 /// A dynamic array.
-pub struct StoreVec<T, S: Store> {
+pub struct StoreVec<T, S: StoreSingle> {
     //  Type invariant:
     //  -   `self.length < self.array.capacity()`.
     //  -   Slots in `0..self.length` are initialized.
@@ -23,7 +23,7 @@ pub struct StoreVec<T, S: Store> {
     array: UniqueArray<T, S>,
 }
 
-impl<T, S: Store + Default> StoreVec<T, S> {
+impl<T, S: StoreSingle + Default> StoreVec<T, S> {
     /// Creates a new, empty, instance.
     pub fn new() -> Self {
         Self::new_in(S::default())
@@ -35,7 +35,7 @@ impl<T, S: Store + Default> StoreVec<T, S> {
     }
 }
 
-impl<T, S: Store> StoreVec<T, S> {
+impl<T, S: StoreSingle> StoreVec<T, S> {
     /// Creates a new, empty, instance.
     pub const fn new_in(store: S) -> Self
     where
@@ -50,7 +50,7 @@ impl<T, S: Store> StoreVec<T, S> {
     /// Creates a new, empty, instance with at least the specified capacity.
     pub const fn with_capacity_in(capacity: usize, store: S) -> Self
     where
-        S: ~const Store + ~const StoreDangling,
+        S: ~const StoreSingle + ~const StoreDangling,
     {
         let length = 0;
         let array = UniqueArray::with_capacity_in(capacity, store);
@@ -59,7 +59,7 @@ impl<T, S: Store> StoreVec<T, S> {
     }
 }
 
-impl<T, S: Store> StoreVec<T, S> {
+impl<T, S: StoreSingle> StoreVec<T, S> {
     /// Returns whether the vector is empty.
     pub const fn is_empty(&self) -> bool {
         self.length == 0
@@ -86,14 +86,14 @@ impl<T, S: Store> StoreVec<T, S> {
     }
 }
 
-impl<T, S: Store> StoreVec<T, S> {
+impl<T, S: StoreSingle> StoreVec<T, S> {
     /// Returns a raw pointer to the vector’s buffer.
     ///
     /// If the vector didn't allocate yet, that is, if its capacity is 0, this pointer is dangling, and valid for zero
     /// sized reads.
     pub const fn as_ptr(&self) -> *const T
     where
-        S: ~const Store,
+        S: ~const StoreSingle,
     {
         self.array.as_slice().as_mut_ptr() as *const T
     }
@@ -104,15 +104,15 @@ impl<T, S: Store> StoreVec<T, S> {
     /// sized reads.
     pub const fn as_mut_ptr(&mut self) -> *mut T
     where
-        S: ~const Store,
+        S: ~const StoreSingle,
     {
-        self.array.as_slice().as_mut_ptr()
+        self.array.as_mut_slice().as_mut_ptr()
     }
 
     /// Returns a slice of the elements of the vector.
     pub const fn as_slice(&self) -> &[T]
     where
-        S: ~const Store,
+        S: ~const StoreSingle,
     {
         debug_assert!(self.length <= self.capacity());
 
@@ -130,14 +130,14 @@ impl<T, S: Store> StoreVec<T, S> {
     /// Returns a mutable slice of the elements of the vector.
     pub const fn as_mut_slice(&mut self) -> &mut [T]
     where
-        S: ~const Store,
+        S: ~const StoreSingle,
     {
         debug_assert!(self.length <= self.capacity());
 
         //  Safety:
         //  -   `0 <= self.length`, as `self.length` is unsigned.
         //  -   `self.length <= self.capacity()`, as per type invariant.
-        let mut slice = unsafe { self.array.as_sub_slice_unchecked(0..self.length) };
+        let mut slice = unsafe { self.array.as_mut_sub_slice_unchecked(0..self.length) };
 
         //  Safety:
         //  -   Slots in `0..self.length` are initialized, as per type invariant.
@@ -148,7 +148,7 @@ impl<T, S: Store> StoreVec<T, S> {
     /// Returns the remaining spare capacity of the vector as a slice of `MaybeUninit<T>`.
     pub const fn spare_capacity_mut(&mut self) -> &mut [MaybeUninit<T>]
     where
-        S: ~const Store,
+        S: ~const StoreSingle,
     {
         debug_assert!(self.length <= self.capacity());
 
@@ -157,7 +157,7 @@ impl<T, S: Store> StoreVec<T, S> {
         //  Safety:
         //  -   `self.length <= self.capacity()`, as per type invariant.
         //  -   `self.capacity() <= self.capacity()`, tautologically.
-        let slice = unsafe { self.array.as_sub_slice_unchecked(self.length..capacity) };
+        let slice = unsafe { self.array.as_mut_sub_slice_unchecked(self.length..capacity) };
 
         //  Safety:
         //  -   `self` is borrowed mutably for the lifetime of the result.
@@ -165,7 +165,7 @@ impl<T, S: Store> StoreVec<T, S> {
     }
 }
 
-impl<T, S: Store> StoreVec<T, S> {
+impl<T, S: StoreSingle> StoreVec<T, S> {
     /// Reserves capacity for at least `additional` more elements.
     ///
     /// #   Panics
@@ -173,7 +173,7 @@ impl<T, S: Store> StoreVec<T, S> {
     /// Panics if the new capacity exceeds `isize::MAX` bytes.
     pub const fn reserve(&mut self, additional: usize)
     where
-        S: ~const Store + ~const StoreDangling,
+        S: ~const StoreSingle + ~const StoreDangling,
     {
         if additional < self.capacity() && self.length <= self.capacity() - additional {
             return;
@@ -183,11 +183,11 @@ impl<T, S: Store> StoreVec<T, S> {
     }
 }
 
-impl<T, S: Store> StoreVec<T, S> {
+impl<T, S: StoreSingle> StoreVec<T, S> {
     /// Returns a reference to the element at index `n`, if any.
     pub const fn get(&self, n: usize) -> Option<&T>
     where
-        S: ~const Store,
+        S: ~const StoreSingle,
     {
         debug_assert!(self.length <= self.capacity());
 
@@ -211,7 +211,7 @@ impl<T, S: Store> StoreVec<T, S> {
     /// Returns a mutable reference to the element at index `n`, if any.
     pub const fn get_mut(&mut self, n: usize) -> Option<&mut T>
     where
-        S: ~const Store,
+        S: ~const StoreSingle,
     {
         debug_assert!(self.length <= self.capacity());
 
@@ -222,7 +222,7 @@ impl<T, S: Store> StoreVec<T, S> {
         //  Safety:
         //  -   `n <= self.length`, as per condition above.
         //  -   `self.length <= self.capacity()`, as per type invariant.
-        let slice = unsafe { self.array.as_sub_slice_unchecked(n..self.length) };
+        let slice = unsafe { self.array.as_mut_sub_slice_unchecked(n..self.length) };
 
         let slot = slice.as_mut_ptr();
 
@@ -233,7 +233,7 @@ impl<T, S: Store> StoreVec<T, S> {
     }
 }
 
-impl<T, S: Store> StoreVec<T, S> {
+impl<T, S: StoreSingle> StoreVec<T, S> {
     /// Clears the vector, removing all values.
     pub fn clear(&mut self) {
         debug_assert!(self.length <= self.capacity());
@@ -243,7 +243,7 @@ impl<T, S: Store> StoreVec<T, S> {
         //  Safety:
         //  -   `0 <= length`, as `length` is unsigned.
         //  -   `length <= self.capacity()`, as per type invariant.
-        let slice = unsafe { self.array.as_sub_slice_unchecked(0..length) };
+        let slice = unsafe { self.array.as_mut_sub_slice_unchecked(0..length) };
 
         let pointer: *mut [T] = slice.as_ptr();
 
@@ -258,7 +258,7 @@ impl<T, S: Store> StoreVec<T, S> {
     /// Appends an element at the back the vector.
     pub const fn push(&mut self, value: T)
     where
-        S: ~const Store + ~const StoreDangling,
+        S: ~const StoreSingle + ~const StoreDangling,
     {
         if self.length == self.capacity() {
             self.grow_for(1);
@@ -280,7 +280,7 @@ impl<T, S: Store> StoreVec<T, S> {
     /// Removes the last element from this vector and returns it, if any.
     pub const fn pop(&mut self) -> Option<T>
     where
-        S: ~const Store,
+        S: ~const StoreSingle,
     {
         debug_assert!(self.length <= self.capacity());
 
@@ -293,7 +293,7 @@ impl<T, S: Store> StoreVec<T, S> {
         //  Safety:
         //  -   `0 <= self.length`, as `self.length` is unsigned.
         //  -   `self.length <= self.capacity()`, as per type invariant.
-        let slice = unsafe { self.array.as_sub_slice_unchecked(self.length..self.capacity()) };
+        let slice = unsafe { self.array.as_mut_sub_slice_unchecked(self.length..self.capacity()) };
 
         let slot = slice.as_mut_ptr() as *const T;
 
@@ -307,13 +307,13 @@ impl<T, S: Store> StoreVec<T, S> {
     }
 }
 
-impl<T, S: Store + Default> Default for StoreVec<T, S> {
+impl<T, S: StoreSingle + Default> Default for StoreVec<T, S> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T, S: Store> Drop for StoreVec<T, S> {
+impl<T, S: StoreSingle> Drop for StoreVec<T, S> {
     fn drop(&mut self) {
         self.clear();
     }
@@ -323,11 +323,11 @@ impl<T, S: Store> Drop for StoreVec<T, S> {
 //  Implementation
 //
 
-impl<T, S: Store> StoreVec<T, S> {
+impl<T, S: StoreSingle> StoreVec<T, S> {
     #[inline(never)]
     const fn grow_for(&mut self, additional: usize)
     where
-        S: ~const Store + ~const StoreDangling,
+        S: ~const StoreSingle + ~const StoreDangling,
     {
         let Some(target_capacity) = self.length.checked_add(additional) else {
             UniqueArray::<T, S>::capacity_exceeded()
@@ -346,26 +346,26 @@ impl<T, S: Store> StoreVec<T, S> {
     }
 }
 
-struct UniqueArray<T, S: Store> {
-    handle: UniqueHandle<[T], S::Handle>,
+struct UniqueArray<T, S: StoreSingle> {
+    handle: UniqueSingleHandle<[T], S::Handle>,
     store: S,
 }
 
-impl<T, S: Store> UniqueArray<T, S> {
+impl<T, S: StoreSingle> UniqueArray<T, S> {
     const fn new_in(store: S) -> Self
     where
         S: ~const StoreDangling,
     {
-        let handle = UniqueHandle::dangling_slice(&store);
+        let handle = UniqueSingleHandle::dangling_slice(&store);
 
         Self { handle, store }
     }
 
-    const fn with_capacity_in(capacity: usize, store: S) -> Self
+    const fn with_capacity_in(capacity: usize, mut store: S) -> Self
     where
-        S: ~const Store + ~const StoreDangling,
+        S: ~const StoreSingle + ~const StoreDangling,
     {
-        let handle = UniqueHandle::allocate_slice(capacity, &store);
+        let handle = UniqueSingleHandle::allocate_slice(capacity, &mut store);
 
         Self { handle, store }
     }
@@ -376,12 +376,22 @@ impl<T, S: Store> UniqueArray<T, S> {
 
     const fn as_slice(&self) -> NonNull<[T]>
     where
-        S: ~const Store,
+        S: ~const StoreSingle,
     {
         //  Safety:
         //  -   `self.handle` is a valid or dangling handle.
         //  -   `self.handle` was obtained from `self.store` in either case.
         unsafe { self.handle.resolve_raw(&self.store) }
+    }
+
+    const fn as_mut_slice(&mut self) -> NonNull<[T]>
+    where
+        S: ~const StoreSingle,
+    {
+        //  Safety:
+        //  -   `self.handle` is a valid or dangling handle.
+        //  -   `self.handle` was obtained from `self.store` in either case.
+        unsafe { self.handle.resolve_raw_mut(&mut self.store) }
     }
 
     //  #   Safety
@@ -390,7 +400,7 @@ impl<T, S: Store> UniqueArray<T, S> {
     //  -   `range.end <= self.capacity()`.
     const unsafe fn as_sub_slice_unchecked(&self, range: Range<usize>) -> NonNull<[T]>
     where
-        S: ~const Store,
+        S: ~const StoreSingle,
     {
         debug_assert!(range.start <= range.end);
         debug_assert!(range.end <= self.handle.len());
@@ -410,9 +420,36 @@ impl<T, S: Store> UniqueArray<T, S> {
 
         NonNull::slice_from_raw_parts(pointer, range.end - range.start)
     }
+
+    //  #   Safety
+    //
+    //  -   `range.start <= range.end`.
+    //  -   `range.end <= self.capacity()`.
+    const unsafe fn as_mut_sub_slice_unchecked(&mut self, range: Range<usize>) -> NonNull<[T]>
+    where
+        S: ~const StoreSingle,
+    {
+        debug_assert!(range.start <= range.end);
+        debug_assert!(range.end <= self.handle.len());
+
+        let slice = self.as_mut_slice();
+
+        let pointer = slice.as_mut_ptr();
+
+        //  Safety:
+        //  -   `pointer` is correctly aligned.
+        //  -   `range.start <= slice.len()`.
+        let pointer = unsafe { pointer.add(range.start) };
+
+        //  Safety:
+        //  -   `pointer` is non-null, since it comes from a `NonNull`, and was not decremented.
+        let pointer = unsafe { NonNull::new_unchecked(pointer) };
+
+        NonNull::slice_from_raw_parts(pointer, range.end - range.start)
+    }
 }
 
-impl<T, S: Store> UniqueArray<T, S> {
+impl<T, S: StoreSingle> UniqueArray<T, S> {
     #[cold]
     #[inline(never)]
     const fn capacity_exceeded() -> ! {
@@ -442,7 +479,7 @@ impl<T, S: Store> UniqueArray<T, S> {
     //  If the new capacity exceeds `isize::MAX` bytes.
     const unsafe fn grow_to(&mut self, target_capacity: usize)
     where
-        S: ~const Store + ~const StoreDangling,
+        S: ~const StoreSingle + ~const StoreDangling,
     {
         const MAX_BYTES: usize = isize::MAX as usize;
 
@@ -455,18 +492,18 @@ impl<T, S: Store> UniqueArray<T, S> {
         }
 
         if self.handle.is_empty() {
-            self.handle = UniqueHandle::allocate_slice(target_capacity, &self.store);
+            self.handle = UniqueSingleHandle::allocate_slice(target_capacity, &mut self.store);
         } else {
             //  Safety:
             //  -   `self.handle` was allocated by `self.store`.
             //  -   `self.handle` is still valid.
             //  -   `target_capacity` is greater than or equal to `self.handle.len()`.
-            unsafe { self.handle.grow(target_capacity, &self.store) };
+            unsafe { self.handle.grow(target_capacity, &mut self.store) };
         }
     }
 }
 
-impl<T, S: Store> Drop for UniqueArray<T, S> {
+impl<T, S: StoreSingle> Drop for UniqueArray<T, S> {
     fn drop(&mut self) {
         if self.handle.is_empty() {
             return;
@@ -480,7 +517,7 @@ impl<T, S: Store> Drop for UniqueArray<T, S> {
         //  Safety:
         //  -   `handle` is still valid, notably it is not dangling since its length is non-zero.
         //  -   `handle` was allocated by `self.store`.
-        unsafe { handle.deallocate(&self.store) };
+        unsafe { handle.deallocate(&mut self.store) };
     }
 }
 

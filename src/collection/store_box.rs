@@ -1,4 +1,4 @@
-//! Proof-of-Concept implementation of a `Box` atop a `Store`.
+//! Proof-of-Concept implementation of a `Box` atop a `StoreSingle`.
 
 use core::{
     alloc::AllocError,
@@ -11,40 +11,40 @@ use core::{
 #[cfg(feature = "coercible-metadata")]
 use core::ops::CoerceUnsized;
 
-use crate::{extension::unique::UniqueHandle, interface::Store};
+use crate::{extension::unique_single::UniqueSingleHandle, interface::StoreSingle};
 
-/// A `Box` atop a `Store`.
-pub struct StoreBox<T: ?Sized, S: Store> {
+/// A `Box` atop a `StoreSingle`.
+pub struct StoreBox<T: ?Sized, S: StoreSingle> {
     store: ManuallyDrop<S>,
-    handle: UniqueHandle<T, S::Handle>,
+    handle: UniqueSingleHandle<T, S::Handle>,
 }
 
-impl<T, S: Store + Default> StoreBox<T, S> {
+impl<T, S: StoreSingle + Default> StoreBox<T, S> {
     /// Creates a new instance.
     pub fn new(value: T) -> Self {
         Self::new_in(value, S::default())
     }
 }
 
-impl<T, S: Store> StoreBox<T, S> {
+impl<T, S: StoreSingle> StoreBox<T, S> {
     /// Creates a new instance.
-    pub fn new_in(value: T, store: S) -> Self {
-        let handle = UniqueHandle::new(value, &store);
+    pub fn new_in(value: T, mut store: S) -> Self {
+        let handle = UniqueSingleHandle::new(value, &mut store);
         let store = ManuallyDrop::new(store);
 
         Self { store, handle }
     }
 
     /// Attempts to create a new instance.
-    pub fn try_new_in(value: T, store: S) -> Result<Self, AllocError> {
-        let handle = UniqueHandle::try_new(value, &store)?;
+    pub fn try_new_in(value: T, mut store: S) -> Result<Self, AllocError> {
+        let handle = UniqueSingleHandle::try_new(value, &mut store)?;
         let store = ManuallyDrop::new(store);
 
         Ok(Self { store, handle })
     }
 }
 
-impl<T: Clone, S: Store + Default> Clone for StoreBox<T, S> {
+impl<T: Clone, S: StoreSingle + Default> Clone for StoreBox<T, S> {
     fn clone(&self) -> Self {
         let value: &T = self;
 
@@ -59,7 +59,7 @@ impl<T: Clone, S: Store + Default> Clone for StoreBox<T, S> {
     }
 }
 
-impl<T: ?Sized, S: Store> Drop for StoreBox<T, S> {
+impl<T: ?Sized, S: StoreSingle> Drop for StoreBox<T, S> {
     fn drop(&mut self) {
         let value: &mut T = &mut *self;
 
@@ -74,16 +74,16 @@ impl<T: ?Sized, S: Store> Drop for StoreBox<T, S> {
 
         //  Safety:
         //  -   `self.store` will never be used ever again.
-        let store = unsafe { ManuallyDrop::take(&mut self.store) };
+        let mut store = unsafe { ManuallyDrop::take(&mut self.store) };
 
         //  Safety:
         //  -   `handle` was allocated by `store`.
         //  -   `handle` is still valid.
-        unsafe { handle.deallocate(&store) };
+        unsafe { handle.deallocate(&mut store) };
     }
 }
 
-impl<T: ?Sized, S: Store> StoreBox<T, S> {
+impl<T: ?Sized, S: StoreSingle> StoreBox<T, S> {
     /// Coerces to another `StoreBox`.
     ///
     /// A poor's man `CoerceUnsized`, since that trait cannot unfortunately be implemented.
@@ -110,7 +110,7 @@ impl<T: ?Sized, S: Store> StoreBox<T, S> {
     }
 }
 
-impl<T: ?Sized, S: Store> ops::Deref for StoreBox<T, S> {
+impl<T: ?Sized, S: StoreSingle> ops::Deref for StoreBox<T, S> {
     type Target = T;
 
     fn deref(&self) -> &T {
@@ -122,17 +122,17 @@ impl<T: ?Sized, S: Store> ops::Deref for StoreBox<T, S> {
     }
 }
 
-impl<T: ?Sized, S: Store> ops::DerefMut for StoreBox<T, S> {
+impl<T: ?Sized, S: StoreSingle> ops::DerefMut for StoreBox<T, S> {
     fn deref_mut(&mut self) -> &mut T {
         //  Safety:
         //  -   `self.handle` was allocated by `self.store`.
         //  -   `self.handle` is still valid.
         //  -   `handle` is associated to a block of memory containing a live instance of T.
-        unsafe { self.handle.resolve_mut(&*self.store) }
+        unsafe { self.handle.resolve_mut(&mut *self.store) }
     }
 }
 
-impl<T: ?Sized, S: Store> fmt::Debug for StoreBox<T, S>
+impl<T: ?Sized, S: StoreSingle> fmt::Debug for StoreBox<T, S>
 where
     T: fmt::Debug,
 {
@@ -144,7 +144,7 @@ where
 }
 
 #[cfg(feature = "coercible-metadata")]
-impl<T, U: ?Sized, S: Store> CoerceUnsized<StoreBox<U, S>> for StoreBox<T, S> where T: Unsize<U> {}
+impl<T, U: ?Sized, S: StoreSingle> CoerceUnsized<StoreBox<U, S>> for StoreBox<T, S> where T: Unsize<U> {}
 
 #[cfg(test)]
 mod test_inline {

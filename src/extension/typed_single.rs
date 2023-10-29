@@ -13,19 +13,19 @@ use core::ops::CoerceUnsized;
 use crate::{
     alloc,
     extension::typed_metadata::TypedMetadata,
-    interface::{Store, StoreDangling},
+    interface::{StoreDangling, StoreSingle},
 };
 
 /// Arbitrary typed handle, for type safety, and coercion.
 ///
 /// A typed handle may be dangling, or may be invalid. It is the responsibility of the user to ensure that the typed
 /// handle is valid when necessary.
-pub struct TypedHandle<T: ?Sized, H> {
+pub struct TypedSingleHandle<T: ?Sized, H> {
     handle: H,
     metadata: TypedMetadata<T>,
 }
 
-impl<T, H: Copy> TypedHandle<T, H> {
+impl<T, H: Copy> TypedSingleHandle<T, H> {
     /// Creates a dangling handle.
     ///
     /// Calls `handle_alloc_error` if the creation of the handle fails.
@@ -60,9 +60,9 @@ impl<T, H: Copy> TypedHandle<T, H> {
 
     /// Creates a new handle, pointing to a `T`.
     #[inline(always)]
-    pub fn new<S>(value: T, store: &S) -> Self
+    pub fn new<S>(value: T, store: &mut S) -> Self
     where
-        S: Store<Handle = H>,
+        S: StoreSingle<Handle = H>,
     {
         let Ok(this) = Self::try_new(value, store) else {
             alloc::handle_alloc_error(Layout::new::<T>())
@@ -73,16 +73,16 @@ impl<T, H: Copy> TypedHandle<T, H> {
 
     /// Attempts to create a new handle, pointing to a `T`.
     #[inline(always)]
-    pub fn try_new<S>(value: T, store: &S) -> Result<Self, AllocError>
+    pub fn try_new<S>(value: T, store: &mut S) -> Result<Self, AllocError>
     where
-        S: Store<Handle = H>,
+        S: StoreSingle<Handle = H>,
     {
         let (handle, _) = store.allocate(Layout::new::<T>())?;
 
         //  Safety:
         //  -   `handle` was just allocated by `store`.
         //  -   `handle` is still valid, as no other operation occurred on `store`.
-        let pointer = unsafe { store.resolve(handle) };
+        let pointer = unsafe { store.resolve_mut(handle) };
 
         //  Safety:
         //  -   `pointer` points to writeable memory area.
@@ -99,9 +99,9 @@ impl<T, H: Copy> TypedHandle<T, H> {
     ///
     /// The allocated memory is left uninitialized.
     #[inline(always)]
-    pub const fn allocate<S>(store: &S) -> Self
+    pub const fn allocate<S>(store: &mut S) -> Self
     where
-        S: ~const Store<Handle = H>,
+        S: ~const StoreSingle<Handle = H>,
     {
         let Ok(this) = Self::try_allocate(store) else {
             alloc::handle_alloc_error(Layout::new::<T>())
@@ -114,9 +114,9 @@ impl<T, H: Copy> TypedHandle<T, H> {
     ///
     /// The allocated memory is left uninitialized.
     #[inline(always)]
-    pub const fn try_allocate<S>(store: &S) -> Result<Self, AllocError>
+    pub const fn try_allocate<S>(store: &mut S) -> Result<Self, AllocError>
     where
-        S: ~const Store<Handle = H>,
+        S: ~const StoreSingle<Handle = H>,
     {
         let Ok((handle, _)) = store.allocate(Layout::new::<T>()) else {
             return Err(AllocError);
@@ -131,9 +131,9 @@ impl<T, H: Copy> TypedHandle<T, H> {
     ///
     /// The allocated memory is zeroed out.
     #[inline(always)]
-    pub const fn allocate_zeroed<S>(store: &S) -> Self
+    pub const fn allocate_zeroed<S>(store: &mut S) -> Self
     where
-        S: ~const Store<Handle = H>,
+        S: ~const StoreSingle<Handle = H>,
     {
         let Ok(this) = Self::try_allocate_zeroed(store) else {
             alloc::handle_alloc_error(Layout::new::<T>())
@@ -146,9 +146,9 @@ impl<T, H: Copy> TypedHandle<T, H> {
     ///
     /// The allocated memory is zeroed out.
     #[inline(always)]
-    pub const fn try_allocate_zeroed<S>(store: &S) -> Result<Self, AllocError>
+    pub const fn try_allocate_zeroed<S>(store: &mut S) -> Result<Self, AllocError>
     where
-        S: ~const Store<Handle = H>,
+        S: ~const StoreSingle<Handle = H>,
     {
         let Ok((handle, _)) = store.allocate_zeroed(Layout::new::<T>()) else {
             return Err(AllocError);
@@ -160,7 +160,7 @@ impl<T, H: Copy> TypedHandle<T, H> {
     }
 }
 
-impl<T: ?Sized, H: Copy> TypedHandle<T, H> {
+impl<T: ?Sized, H: Copy> TypedSingleHandle<T, H> {
     /// Creates a handle from raw parts.
     ///
     /// -   If `handle` is valid, and associated to a block of memory which fits an instance of `T`, then the resulting
@@ -185,14 +185,14 @@ impl<T: ?Sized, H: Copy> TypedHandle<T, H> {
     /// -   `self` must still be valid.
     /// -   `self` is invalidated alongside any copy of it.
     #[inline(always)]
-    pub const unsafe fn deallocate<S>(&self, store: &S)
+    pub const unsafe fn deallocate<S>(&self, store: &mut S)
     where
-        S: ~const Store<Handle = H>,
+        S: ~const StoreSingle<Handle = H>,
     {
         //  Safety:
         //  -   `self.handle` was allocated by `store`, as per pre-conditions.
         //  -   `self.handle` is still valid, as per pre-conditions.
-        let pointer = unsafe { self.resolve_raw(store) };
+        let pointer = unsafe { self.resolve_raw_mut(store) };
 
         //  Safety:
         //  -   `pointer` has valid metadata for `T`.
@@ -220,7 +220,7 @@ impl<T: ?Sized, H: Copy> TypedHandle<T, H> {
     #[inline(always)]
     pub const unsafe fn resolve<'a, S>(&self, store: &'a S) -> &'a T
     where
-        S: ~const Store<Handle = H>,
+        S: ~const StoreSingle<Handle = H>,
     {
         //  Safety:
         //  -   `self.handle` was allocated by `store`, as per pre-conditions.
@@ -248,14 +248,14 @@ impl<T: ?Sized, H: Copy> TypedHandle<T, H> {
     ///     `resolve` calls, may invalidate the reference.
     #[inline(always)]
     #[allow(clippy::mut_from_ref)]
-    pub const unsafe fn resolve_mut<'a, S>(&mut self, store: &'a S) -> &'a mut T
+    pub const unsafe fn resolve_mut<'a, S>(&mut self, store: &'a mut S) -> &'a mut T
     where
-        S: ~const Store<Handle = H>,
+        S: ~const StoreSingle<Handle = H>,
     {
         //  Safety:
         //  -   `self.handle` was allocated by `store`, as per pre-conditions.
         //  -   `self.handle` is still valid, as per pre-conditions.
-        let mut pointer = unsafe { self.resolve_raw(store) };
+        let mut pointer = unsafe { self.resolve_raw_mut(store) };
 
         //  Safety:
         //  -   `pointer` points to a live instance of `T`, as per type-invariant.
@@ -270,6 +270,7 @@ impl<T: ?Sized, H: Copy> TypedHandle<T, H> {
     ///
     /// -   `self` must have been allocated by `store`.
     /// -   `self` must still be valid.
+    /// -   The pointer is only guaranteed to be dereferenceable to a shared reference.
     /// -   The pointer is only guaranteed to be valid as long as `self` is valid.
     /// -   The pointer is only guaranteed to be valid as long as pointers resolved from `self` are not invalidated.
     ///     Most notably, unless `store` implements `StoreStable`, any method call on `store`, including other
@@ -277,7 +278,7 @@ impl<T: ?Sized, H: Copy> TypedHandle<T, H> {
     #[inline(always)]
     pub const unsafe fn resolve_raw<S>(&self, store: &S) -> NonNull<T>
     where
-        S: ~const Store<Handle = H>,
+        S: ~const StoreSingle<Handle = H>,
     {
         //  Safety:
         //  -   `self.handle` was allocated by `store`, as per pre-conditions.
@@ -287,24 +288,47 @@ impl<T: ?Sized, H: Copy> TypedHandle<T, H> {
         NonNull::from_raw_parts(pointer.cast(), self.metadata.get())
     }
 
+    /// Resolves the handle to a non-null pointer.
+    ///
+    /// #   Safety
+    ///
+    /// -   `self` must have been allocated by `store`.
+    /// -   `self` must still be valid.
+    /// -   The pointer is only guaranteed to be valid as long as `self` is valid.
+    /// -   The pointer is only guaranteed to be valid as long as pointers resolved from `self` are not invalidated.
+    ///     Most notably, unless `store` implements `StoreStable`, any method call on `store`, including other
+    ///     `resolve` calls, may invalidate the pointer.
+    #[inline(always)]
+    pub const unsafe fn resolve_raw_mut<S>(&self, store: &mut S) -> NonNull<T>
+    where
+        S: ~const StoreSingle<Handle = H>,
+    {
+        //  Safety:
+        //  -   `self.handle` was allocated by `store`, as per pre-conditions.
+        //  -   `self.handle` is still valid, as per pre-conditions.
+        let pointer = unsafe { store.resolve_mut(self.handle) };
+
+        NonNull::from_raw_parts(pointer.cast(), self.metadata.get())
+    }
+
     /// Coerces the handle into another.
     ///
     /// If `self` is valid, the resulting typed handle is valid; otherwise it is invalid.
     #[inline(always)]
-    pub const fn coerce<U: ?Sized>(&self) -> TypedHandle<U, H>
+    pub const fn coerce<U: ?Sized>(&self) -> TypedSingleHandle<U, H>
     where
         T: Unsize<U>,
     {
         let metadata = self.metadata.coerce();
 
-        TypedHandle {
+        TypedSingleHandle {
             handle: self.handle,
             metadata,
         }
     }
 }
 
-impl<T, H: Copy> TypedHandle<[T], H> {
+impl<T, H: Copy> TypedSingleHandle<[T], H> {
     /// Creates a dangling handle.
     ///
     /// Calls `handle_alloc_error` if the creation of the handle fails.
@@ -341,9 +365,9 @@ impl<T, H: Copy> TypedHandle<[T], H> {
     ///
     /// The allocated memory is left uninitialized.
     #[inline(always)]
-    pub const fn allocate_slice<S>(size: usize, store: &S) -> Self
+    pub const fn allocate_slice<S>(size: usize, store: &mut S) -> Self
     where
-        S: ~const Store<Handle = H> + ~const StoreDangling<Handle = H>,
+        S: ~const StoreSingle<Handle = H> + ~const StoreDangling<Handle = H>,
     {
         let Ok(this) = Self::try_allocate_slice(size, store) else {
             alloc::handle_alloc_error(Layout::new::<T>())
@@ -356,9 +380,9 @@ impl<T, H: Copy> TypedHandle<[T], H> {
     ///
     /// The allocated memory is left uninitialized.
     #[inline(always)]
-    pub const fn try_allocate_slice<S>(size: usize, store: &S) -> Result<Self, AllocError>
+    pub const fn try_allocate_slice<S>(size: usize, store: &mut S) -> Result<Self, AllocError>
     where
-        S: ~const Store<Handle = H> + ~const StoreDangling<Handle = H>,
+        S: ~const StoreSingle<Handle = H> + ~const StoreDangling<Handle = H>,
     {
         if mem::size_of::<T>() == 0 {
             let Ok(mut this) = Self::try_dangling_slice(store) else {
@@ -389,9 +413,9 @@ impl<T, H: Copy> TypedHandle<[T], H> {
     ///
     /// The allocated memory is zeroed out.
     #[inline(always)]
-    pub const fn allocate_zeroed_slice<S>(size: usize, store: &S) -> Self
+    pub const fn allocate_zeroed_slice<S>(size: usize, store: &mut S) -> Self
     where
-        S: ~const Store<Handle = H> + ~const StoreDangling<Handle = H>,
+        S: ~const StoreSingle<Handle = H> + ~const StoreDangling<Handle = H>,
     {
         let Ok(this) = Self::try_allocate_zeroed_slice(size, store) else {
             alloc::handle_alloc_error(Layout::new::<T>())
@@ -404,9 +428,9 @@ impl<T, H: Copy> TypedHandle<[T], H> {
     ///
     /// The allocated memory is zeroed out.
     #[inline(always)]
-    pub const fn try_allocate_zeroed_slice<S>(size: usize, store: &S) -> Result<Self, AllocError>
+    pub const fn try_allocate_zeroed_slice<S>(size: usize, store: &mut S) -> Result<Self, AllocError>
     where
-        S: ~const Store<Handle = H> + ~const StoreDangling<Handle = H>,
+        S: ~const StoreSingle<Handle = H> + ~const StoreDangling<Handle = H>,
     {
         if mem::size_of::<T>() == 0 {
             let Ok(mut this) = Self::try_dangling_slice(store) else {
@@ -453,9 +477,9 @@ impl<T, H: Copy> TypedHandle<[T], H> {
     /// -   `self` must have been allocated by `store`.
     /// -   `self` must still be valid.
     /// -   `new_size` must be greater than or equal to `self.len()`.
-    pub const unsafe fn grow<S>(&mut self, new_size: usize, store: &S)
+    pub const unsafe fn grow<S>(&mut self, new_size: usize, store: &mut S)
     where
-        S: ~const Store<Handle = H>,
+        S: ~const StoreSingle<Handle = H>,
     {
         //  Safety:
         //  -   `self` has been allocated by `store`, as per pre-conditions.
@@ -478,9 +502,9 @@ impl<T, H: Copy> TypedHandle<[T], H> {
     /// -   `self` must have been allocated by `store`.
     /// -   `self` must still be valid.
     /// -   `new_size` must be greater than or equal to `self.len()`.
-    pub const unsafe fn try_grow<S>(&mut self, new_size: usize, store: &S) -> Result<(), AllocError>
+    pub const unsafe fn try_grow<S>(&mut self, new_size: usize, store: &mut S) -> Result<(), AllocError>
     where
-        S: ~const Store<Handle = H>,
+        S: ~const StoreSingle<Handle = H>,
     {
         debug_assert!(new_size >= self.len());
 
@@ -521,9 +545,9 @@ impl<T, H: Copy> TypedHandle<[T], H> {
     /// -   `self` must have been allocated by `store`.
     /// -   `self` must still be valid.
     /// -   `new_size` must be greater than or equal to `self.len()`.
-    pub const unsafe fn grow_zeroed<S>(&mut self, new_size: usize, store: &S)
+    pub const unsafe fn grow_zeroed<S>(&mut self, new_size: usize, store: &mut S)
     where
-        S: ~const Store<Handle = H>,
+        S: ~const StoreSingle<Handle = H>,
     {
         //  Safety:
         //  -   `self` has been allocated by `store`, as per pre-conditions.
@@ -546,9 +570,9 @@ impl<T, H: Copy> TypedHandle<[T], H> {
     /// -   `self` must have been allocated by `store`.
     /// -   `self` must still be valid.
     /// -   `new_size` must be greater than or equal to `self.len()`.
-    pub const unsafe fn try_grow_zeroed<S>(&mut self, new_size: usize, store: &S) -> Result<(), AllocError>
+    pub const unsafe fn try_grow_zeroed<S>(&mut self, new_size: usize, store: &mut S) -> Result<(), AllocError>
     where
-        S: ~const Store<Handle = H>,
+        S: ~const StoreSingle<Handle = H>,
     {
         debug_assert!(new_size >= self.len());
 
@@ -588,9 +612,9 @@ impl<T, H: Copy> TypedHandle<[T], H> {
     /// -   `self` must have been allocated by `store`.
     /// -   `self` must still be valid.
     /// -   `new_size` must be less than or equal to `self.len()`.
-    pub const unsafe fn shrink<S>(&mut self, new_size: usize, store: &S)
+    pub const unsafe fn shrink<S>(&mut self, new_size: usize, store: &mut S)
     where
-        S: ~const Store<Handle = H>,
+        S: ~const StoreSingle<Handle = H>,
     {
         //  Safety:
         //  -   `self` has been allocated by `store`, as per pre-conditions.
@@ -612,9 +636,9 @@ impl<T, H: Copy> TypedHandle<[T], H> {
     /// -   `self` must have been allocated by `store`.
     /// -   `self` must still be valid.
     /// -   `new_size` must be less than or equal to `self.len()`.
-    pub const unsafe fn try_shrink<S>(&mut self, new_size: usize, store: &S) -> Result<(), AllocError>
+    pub const unsafe fn try_shrink<S>(&mut self, new_size: usize, store: &mut S) -> Result<(), AllocError>
     where
-        S: ~const Store<Handle = H>,
+        S: ~const StoreSingle<Handle = H>,
     {
         debug_assert!(new_size <= self.len());
 
@@ -650,22 +674,22 @@ impl<T, H: Copy> TypedHandle<[T], H> {
     }
 }
 
-impl<T: ?Sized, H: Copy> Clone for TypedHandle<T, H> {
+impl<T: ?Sized, H: Copy> Clone for TypedSingleHandle<T, H> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<T: ?Sized, H: Copy> Copy for TypedHandle<T, H> {}
+impl<T: ?Sized, H: Copy> Copy for TypedSingleHandle<T, H> {}
 
 #[cfg(feature = "coercible-metadata")]
-impl<T, U: ?Sized, H: Copy> CoerceUnsized<TypedHandle<U, H>> for TypedHandle<T, H> where T: Unsize<U> {}
+impl<T, U: ?Sized, H: Copy> CoerceUnsized<TypedSingleHandle<U, H>> for TypedSingleHandle<T, H> where T: Unsize<U> {}
 
 //
 //  Implementation
 //
 
-impl<T, H> TypedHandle<[T], H> {
+impl<T, H> TypedSingleHandle<[T], H> {
     const fn layout(size: usize) -> Result<Layout, AllocError> {
         let Some(size) = mem::size_of::<T>().checked_mul(size) else {
             return Err(AllocError);

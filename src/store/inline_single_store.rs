@@ -4,23 +4,22 @@
 
 use core::{
     alloc::{AllocError, Layout},
-    cell::UnsafeCell,
     fmt,
     mem::{self, MaybeUninit},
     ptr::{self, Alignment, NonNull},
 };
 
-use crate::interface::{Store, StoreDangling, StoreStable};
+use crate::interface::{StoreDangling, StoreSingle, StoreStable};
 
 /// An implementation of `Store` providing a single, inline, block of memory.
 ///
 /// The block of memory is aligned and sized as per `T`.
-pub struct InlineSingleStore<T>(UnsafeCell<MaybeUninit<T>>);
+pub struct InlineSingleStore<T>(MaybeUninit<T>);
 
 impl<T> InlineSingleStore<T> {
     /// Creates a new instance.
     pub const fn new() -> Self {
-        Self(UnsafeCell::new(MaybeUninit::uninit()))
+        Self(MaybeUninit::uninit())
     }
 }
 
@@ -42,8 +41,24 @@ unsafe impl<T> const StoreDangling for InlineSingleStore<T> {
     }
 }
 
-unsafe impl<T> const Store for InlineSingleStore<T> {
-    fn allocate(&self, layout: Layout) -> Result<(Self::Handle, usize), AllocError> {
+unsafe impl<T> const StoreSingle for InlineSingleStore<T> {
+    unsafe fn resolve(&self, _handle: Self::Handle) -> NonNull<u8> {
+        let pointer = self.0.as_ptr() as *mut T;
+
+        //  Safety:
+        //  -   `self` is non null.
+        unsafe { NonNull::new_unchecked(pointer) }.cast()
+    }
+
+    unsafe fn resolve_mut(&mut self, _handle: Self::Handle) -> NonNull<u8> {
+        let pointer = self.0.as_mut_ptr();
+
+        //  Safety:
+        //  -   `self` is non null.
+        unsafe { NonNull::new_unchecked(pointer) }.cast()
+    }
+
+    fn allocate(&mut self, layout: Layout) -> Result<(Self::Handle, usize), AllocError> {
         if Self::validate_layout(layout).is_err() {
             return Err(AllocError);
         }
@@ -51,18 +66,10 @@ unsafe impl<T> const Store for InlineSingleStore<T> {
         Ok(((), mem::size_of::<T>()))
     }
 
-    unsafe fn deallocate(&self, _handle: Self::Handle, _layout: Layout) {}
-
-    unsafe fn resolve(&self, _handle: Self::Handle) -> NonNull<u8> {
-        let pointer = self.0.get();
-
-        //  Safety:
-        //  -   `self` is non null.
-        unsafe { NonNull::new_unchecked(pointer) }.cast()
-    }
+    unsafe fn deallocate(&mut self, _handle: Self::Handle, _layout: Layout) {}
 
     unsafe fn grow(
-        &self,
+        &mut self,
         _handle: Self::Handle,
         _old_layout: Layout,
         new_layout: Layout,
@@ -80,7 +87,7 @@ unsafe impl<T> const Store for InlineSingleStore<T> {
     }
 
     unsafe fn shrink(
-        &self,
+        &mut self,
         _handle: Self::Handle,
         _old_layout: Layout,
         _new_layout: Layout,
@@ -93,12 +100,12 @@ unsafe impl<T> const Store for InlineSingleStore<T> {
         Ok(((), mem::size_of::<T>()))
     }
 
-    fn allocate_zeroed(&self, layout: Layout) -> Result<(Self::Handle, usize), AllocError> {
+    fn allocate_zeroed(&mut self, layout: Layout) -> Result<(Self::Handle, usize), AllocError> {
         if Self::validate_layout(layout).is_err() {
             return Err(AllocError);
         }
 
-        let pointer = self.0.get() as *mut u8;
+        let pointer = self.0.as_mut_ptr() as *mut u8;
 
         //  Safety:
         //  -   `pointer` is valid, since `self` is valid.
@@ -110,7 +117,7 @@ unsafe impl<T> const Store for InlineSingleStore<T> {
     }
 
     unsafe fn grow_zeroed(
-        &self,
+        &mut self,
         _handle: Self::Handle,
         old_layout: Layout,
         new_layout: Layout,
@@ -124,7 +131,7 @@ unsafe impl<T> const Store for InlineSingleStore<T> {
             return Err(AllocError);
         }
 
-        let pointer = self.0.get() as *mut u8;
+        let pointer = self.0.as_mut_ptr() as *mut u8;
 
         //  Safety:
         //  -   Both starting and resulting pointers are in bounds of the same allocated objects as `old_layout` fits

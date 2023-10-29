@@ -13,6 +13,7 @@
 #![feature(alloc_layout_extra)]
 #![feature(coerce_unsized)]
 #![feature(const_alloc_layout)]
+#![feature(const_maybe_uninit_as_mut_ptr)]
 #![feature(const_mut_refs)]
 #![feature(const_ptr_as_ref)]
 #![feature(const_refs_to_cell)]

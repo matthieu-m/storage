@@ -15,7 +15,7 @@ use oorandom::Rand32;
 
 use crate::{
     extension::{typed::TypedHandle, typed_metadata::TypedMetadata},
-    interface::{Store, StoreMultiple, StoreStable},
+    interface::{Store, StoreStable},
 };
 
 /// A Skip List, with minimal memory usage.
@@ -109,7 +109,7 @@ impl<K, V, S: Store> SkipList<K, V, S> {
     }
 }
 
-impl<K, V, S: StoreMultiple + StoreStable> SkipList<K, V, S>
+impl<K, V, S: Store + StoreStable> SkipList<K, V, S>
 where
     K: Ord,
 {
@@ -208,7 +208,9 @@ where
         for level in (0..head_links).rev() {
             //  Advance as far as possible in this level.
             loop {
-                let Some(next) = node.links_mut().get_mut(level) else { break };
+                let Some(next) = node.links_mut().get_mut(level) else {
+                    break;
+                };
 
                 //  Safety:
                 //  -   `next` was allocated by `self.store.`
@@ -317,7 +319,7 @@ impl<K, V, S: Store> Drop for SkipList<K, V, S> {
 
 impl<K, V, S> Default for SkipList<K, V, S>
 where
-    S: StoreMultiple + Default,
+    S: Store + Default,
 {
     fn default() -> Self {
         Self::new()
@@ -359,7 +361,7 @@ impl<K, V, S: Store> SkipList<K, V, S> {
     }
 }
 
-impl<K, V, S: StoreMultiple + StoreStable> SkipList<K, V, S>
+impl<K, V, S: Store + StoreStable> SkipList<K, V, S>
 where
     K: Ord,
 {

@@ -8,7 +8,7 @@ use core::{
 #[cfg(feature = "alloc")]
 use alloc::alloc::Global;
 
-use crate::interface::{Store, StoreDangling, StoreMultiple, StorePinning, StoreStable};
+use crate::interface::{Store, StoreDangling, StorePinning, StoreSingle, StoreStable};
 
 #[cfg(feature = "alloc")]
 use crate::interface::StoreSharing;
@@ -120,9 +120,81 @@ where
     }
 }
 
-//  Safety:
-//  -   `Allocator` does not invalidate existing allocations when allocating.
-unsafe impl<A> StoreMultiple for A where A: Allocator {}
+unsafe impl<A> StoreSingle for A
+where
+    A: Allocator,
+{
+    unsafe fn resolve(&self, handle: Self::Handle) -> NonNull<u8> {
+        handle.into()
+    }
+
+    unsafe fn resolve_mut(&mut self, handle: Self::Handle) -> NonNull<u8> {
+        handle.into()
+    }
+
+    fn allocate(&mut self, layout: Layout) -> Result<(Self::Handle, usize), AllocError> {
+        Allocator::allocate(self, layout).map(|slice| (slice.as_non_null_ptr().into(), slice.len()))
+    }
+
+    unsafe fn deallocate(&mut self, handle: Self::Handle, layout: Layout) {
+        //  Safety:
+        //  -   `handle` is valid, as per the pre-conditions of `deallocate`.
+        //  -   `layout` fits, as per the pre-conditions of `deallocate`.
+        unsafe { Allocator::deallocate(self, handle.into(), layout) };
+    }
+
+    unsafe fn grow(
+        &mut self,
+        handle: Self::Handle,
+        old_layout: Layout,
+        new_layout: Layout,
+    ) -> Result<(Self::Handle, usize), AllocError> {
+        //  Safety:
+        //  -   `handle` is valid, as per the pre-conditions of `grow`.
+        //  -   `old_layout` fits, as per the pre-conditions of `grow`.
+        //  -   `new_layout.size()` is greater than or equal to `old_layout.size()`, as per the pre-conditions of
+        //      `grow`.
+        let result = unsafe { Allocator::grow(self, handle.into(), old_layout, new_layout) };
+
+        result.map(|slice| (slice.as_non_null_ptr().into(), slice.len()))
+    }
+
+    unsafe fn shrink(
+        &mut self,
+        handle: Self::Handle,
+        old_layout: Layout,
+        new_layout: Layout,
+    ) -> Result<(Self::Handle, usize), AllocError> {
+        //  Safety:
+        //  -   `handle` is valid, as per the pre-conditions of `shrink`.
+        //  -   `old_layout` fits, as per the pre-conditions of `shrink`.
+        //  -   `new_layout.size()` is smaller than or equal to `old_layout.size()`, as per the pre-conditions of
+        //      `shrink`.
+        let result = unsafe { Allocator::shrink(self, handle.into(), old_layout, new_layout) };
+
+        result.map(|slice| (slice.as_non_null_ptr().into(), slice.len()))
+    }
+
+    fn allocate_zeroed(&mut self, layout: Layout) -> Result<(Self::Handle, usize), AllocError> {
+        Allocator::allocate_zeroed(self, layout).map(|slice| (slice.as_non_null_ptr().into(), slice.len()))
+    }
+
+    unsafe fn grow_zeroed(
+        &mut self,
+        handle: Self::Handle,
+        old_layout: Layout,
+        new_layout: Layout,
+    ) -> Result<(Self::Handle, usize), AllocError> {
+        //  Safety:
+        //  -   `handle` is valid, as per the pre-conditions of `grow_zeroed`.
+        //  -   `old_layout` fits, as per the pre-conditions of `grow_zeroed`.
+        //  -   `new_layout.size()` is greater than or equal to `old_layout.size()`, as per the pre-conditions of
+        //      `grow_zeroed`.
+        let result = unsafe { Allocator::grow_zeroed(self, handle.into(), old_layout, new_layout) };
+
+        result.map(|slice| (slice.as_non_null_ptr().into(), slice.len()))
+    }
+}
 
 //  Safety:
 //  -   `Allocator` allocations are pinned.
